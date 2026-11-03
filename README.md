@@ -4,11 +4,11 @@
 под твоё железо, rolling release+++ (сначала собрать всё, потом применить; ABI-пересборка; откат), установка
 в любой корень, cross-сборка.
 
-> **Статус:** все команды bash-прототипа ([CleanLinux/burn](https://github.com/vovawees/CleanLinux/tree/main/burn))
-> перенесены. Рецепты, `burn.conf`, профили, база установленных пакетов и формат `.pkg.tar.zst` остаются теми же —
-> переход незаметен, а C-версия проверяется сравнением с прототипом на всех рецептах
-> [CleanLinux-Recipes](https://github.com/vovawees/CleanLinux-Recipes) и на тестовых сборках. Дальше — перевести
-> на неё bootstrap и тесты CleanLinux и убрать прототип.
+> **Статус:** burn CleanLinux — это он: bootstrap, тесты и образ используют C-версию, пакет `burn` входит в `base`.
+> Все команды bash-прототипа ([тег `burn-prototype`](https://github.com/vovawees/CleanLinux/tree/burn-prototype/burn))
+> перенесены; рецепты, `burn.conf`, профили, база установленных пакетов и формат `.pkg.tar.zst` остались теми же.
+> C-версия сверяется с прототипом на всех рецептах [CleanLinux-Recipes](https://github.com/vovawees/CleanLinux-Recipes)
+> и на тестовых сборках, а настоящая base (glibc, bash, coreutils, util-linux, …) собирается ею байт в байт так же.
 
 ## Зачем C
 
@@ -26,13 +26,22 @@
 ```sh
 make
 make check               # RECIPES=../CleanLinux-Recipes/packages: ещё и сверка всех рецептов с bash
-make proto               # каждая готовая команда против bash-прототипа (рядом ../CleanLinux и ../CleanLinux-Recipes)
+make proto               # каждая команда против bash-прототипа (рядом ../CleanLinux-prototype и ../CleanLinux-Recipes)
 make check-btrfs         # снимки на настоящей btrfs (loop-устройство; KERNEL=bzImage — в qemu)
-sudo make install        # PREFIX=/usr DESTDIR=
+sudo make install        # PREFIX=/usr DESTDIR=: burn и пример burn.conf
+make dist                # burn-VERSION.tar.gz — его собирает рецепт burn
 ```
 
 Нужны компилятор C17 (GCC или Clang), glibc и libzstd. Для `make proto` ещё bash, GNU tar, zstd, patch, unzip,
-python3, autoconf, cmake, meson и ninja: тестовые рецепты собираются обеими версиями.
+python3, autoconf, cmake, meson и ninja: тестовые рецепты собираются обеими версиями. Прототип — CleanLinux на теге
+`burn-prototype`:
+
+```sh
+git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/CleanLinux ../CleanLinux-prototype
+```
+
+На устройстве burn нужны ещё bash (функции рецептов), git (`sync`), curl или wget (`fetch`) и инструменты сборки.
+Профили железа ищутся в `BURN_PROFILE_DIR`, `/etc/burn/profiles` и `/usr/share/burn/profiles` (их ставит CleanLinux).
 
 ## Статус переноса
 
