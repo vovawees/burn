@@ -128,6 +128,7 @@ static bool trig_ldconfig, trig_modules;
 
 static void triggers_note(const svec *files, bool libs)
 {
+	die_hook = triggers_run; /* what is installed gets its triggers even when burn stops later */
 	for (size_t i = 0; i < files->n; i++) {
 		const char *f = files->v[i];
 		if (str_prefix(f, "usr/lib/modules/") && f[16])
@@ -274,9 +275,10 @@ void triggers_run(void)
 		}
 		free(ld);
 	}
-	if (trig_modules)
-		modules_trigger();
+	bool modules = trig_modules;
 	trig_ldconfig = trig_modules = false;
+	if (modules)
+		modules_trigger();
 }
 
 /* ---- history ---- */

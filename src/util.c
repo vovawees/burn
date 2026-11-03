@@ -73,6 +73,17 @@ void warn(const char *fmt, ...)
 	va_end(ap);
 }
 
+void (*die_hook)(void);
+
+void exit_status(int rc)
+{
+	void (*h)(void) = die_hook;
+	die_hook = NULL; /* once, even when the hook dies itself */
+	if (h)
+		h();
+	exit(rc);
+}
+
 void die(const char *fmt, ...)
 {
 	char pre[64];
@@ -81,7 +92,7 @@ void die(const char *fmt, ...)
 	va_start(ap, fmt);
 	vout(pre, "", fmt, ap);
 	va_end(ap);
-	exit(1);
+	exit_status(1);
 }
 
 void die_errno(const char *fmt, ...)

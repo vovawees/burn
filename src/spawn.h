@@ -18,6 +18,9 @@ typedef struct {
 
 /* Exit status of the program, 128 + signal, 127 when it cannot be started. */
 int run(char *const argv[], const run_opts *o);
+/* FN(ARG) in a child process with the options of run() (redirections, environment, cwd): its
+ * return value is the exit status. For C code whose output belongs in a log. */
+int run_func(int (*fn)(void *), void *arg, const run_opts *o);
 /* run() with a NULL terminated argument list and default options. */
 int runl(const char *prog, ...) __attribute__((sentinel));
 /* Captured stdout without the trailing newline, NULL when the program failed. */

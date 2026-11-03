@@ -23,6 +23,10 @@ void warn(const char *fmt, ...) PRINTF(1, 2);
 NORETURN void die(const char *fmt, ...) PRINTF(1, 2);
 NORETURN void die_errno(const char *fmt, ...) PRINTF(1, 2); /* appends ": strerror(errno)" */
 bool confirm(const char *question);
+/* run once when burn exits on an error (die, a failed command): the triggers of what is already
+ * installed. Forked children that do not exec clear it. */
+extern void (*die_hook)(void);
+NORETURN void exit_status(int rc); /* die_hook, then exit(rc) */
 
 /* ---- memory (out of memory is fatal) ---- */
 void *xmalloc(size_t n);

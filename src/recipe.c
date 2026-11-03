@@ -106,8 +106,15 @@ void recipe_names(svec *out)
 
 /* ======================================================================= loading */
 
+static const char *const RECIPE_FUNCS[] = {"do_prepare",   "do_configure",    "do_build",    "do_check",
+					   "do_install",   "post_install",    "configure_extra", "meson_extra",
+					   "cmake_extra",  NULL};
+
+/* bash's `unset -v` of every recipe variable, then the defaults: fresh variables, never exported */
 static void recipe_reset(recipe *r)
 {
+	for (const char *const *v = RECIPE_VARS; *v; v++)
+		sh_unset(&r->env, *v);
 	for (size_t i = 0; i < ARRAY_LEN(SCALAR_DEFAULTS); i++)
 		sh_set(&r->env, SCALAR_DEFAULTS[i][0], SCALAR_DEFAULTS[i][1]);
 	svec none = SVEC_INIT;
@@ -115,6 +122,29 @@ static void recipe_reset(recipe *r)
 		sh_set_list(&r->env, *a, &none);
 	sh_set(&r->env, "RECIPE_FILE", r->file);
 	sh_set(&r->env, "RECIPE_DIR", r->dir);
+}
+
+void recipe_reset_sh(const recipe *r, sbuf *s)
+{
+	sb_adds(s, "unset -v");
+	for (const char *const *v = RECIPE_VARS; *v; v++)
+		sb_addf(s, " %s", *v);
+	sb_adds(s, "\nunset -f");
+	for (const char *const *f = RECIPE_FUNCS; *f; f++)
+		sb_addf(s, " %s", *f);
+	sb_addc(s, '\n');
+	for (size_t i = 0; i < ARRAY_LEN(SCALAR_DEFAULTS); i++) {
+		sb_addf(s, "%s=", SCALAR_DEFAULTS[i][0]);
+		sh_quote(s, SCALAR_DEFAULTS[i][1]);
+		sb_addc(s, '\n');
+	}
+	for (const char *const *a = ARRAY_VARS; *a; a++)
+		sb_addf(s, "%s=()\n", *a);
+	sb_adds(s, "RECIPE_FILE=");
+	sh_quote(s, r->file);
+	sb_adds(s, "\nRECIPE_DIR=");
+	sh_quote(s, r->dir);
+	sb_adds(s, "\n");
 }
 
 recipe *recipe_try_load(const char *what, char **err)

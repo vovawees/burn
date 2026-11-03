@@ -11,8 +11,10 @@
 
 extern char **environ;
 
-static NORETURN void child(char *const argv[], const run_opts *o, int pipe_w)
+/* the child's side of run_opts: working directory, redirections, environment */
+static void child_setup(const run_opts *o, int pipe_w)
 {
+	die_hook = NULL;
 	if (o->cwd && chdir(o->cwd) < 0) {
 		fprintf(stderr, "burn: cd %s: %s\n", o->cwd, strerror(errno));
 		_exit(127);
@@ -41,8 +43,23 @@ static NORETURN void child(char *const argv[], const run_opts *o, int pipe_w)
 		dup2(null, 1);
 		dup2(null, 2);
 	}
+	if (null > 2)
+		close(null);
 	if (o->envp)
 		environ = o->envp; /* execvp searches the PATH of the new environment */
+}
+
+static NORETURN void child(char *const argv[], int (*fn)(void *), void *arg, const run_opts *o, int pipe_w)
+{
+	child_setup(o, pipe_w);
+	if (fn) {
+		if (pipe_w > 2)
+			close(pipe_w); /* dup2()ed already; the readers see the end when the child exits */
+		int rc = fn(arg);
+		fflush(stdout);
+		fflush(stderr);
+		_exit(rc & 255);
+	}
 	execvp(argv[0], argv);
 	int e = errno;
 	if (!o->quiet)
@@ -50,7 +67,7 @@ static NORETURN void child(char *const argv[], const run_opts *o, int pipe_w)
 	_exit(127);
 }
 
-int run(char *const argv[], const run_opts *o)
+static int run_common(char *const argv[], int (*fn)(void *), void *arg, const run_opts *o)
 {
 	static const run_opts none = {0};
 	if (!o)
@@ -65,7 +82,7 @@ int run(char *const argv[], const run_opts *o)
 	if (pid < 0)
 		die_errno("fork");
 	if (pid == 0)
-		child(argv, o, p[1]);
+		child(argv, fn, arg, o, p[1]);
 	if (piped) {
 		close(p[1]);
 		char buf[65536];
@@ -93,6 +110,16 @@ int run(char *const argv[], const run_opts *o)
 	if (WIFSIGNALED(st))
 		return 128 + WTERMSIG(st);
 	return 1;
+}
+
+int run(char *const argv[], const run_opts *o)
+{
+	return run_common(argv, NULL, NULL, o);
+}
+
+int run_func(int (*fn)(void *), void *arg, const run_opts *o)
+{
+	return run_common(NULL, fn, arg, o);
 }
 
 int runl(const char *prog, ...)

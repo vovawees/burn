@@ -88,6 +88,8 @@ char *features_string(const recipe *r); /* "+a -b" sorted by name */
 bool recipe_use(const recipe *r, const char *feat);
 void deps_active(const recipe *r, const svec *deps, svec *out);
 char *recipe_rid(const recipe *r);
+/* the prototype's recipe_reset as shell code, with RECIPE_FILE and RECIPE_DIR (for env.sh) */
+void recipe_reset_sh(const recipe *r, sbuf *s);
 /* regular files of the recipe directory (find -type f), sorted; with_recipe: the recipe too */
 void recipe_files(const recipe *r, bool with_recipe, svec *out);
 char *url_expand(const char *s);
@@ -119,6 +121,55 @@ void fetch_sources(recipe *r, bool verify);          /* dies on a missing source
 void prefetch(const svec *names);                    /* every remote source, FETCH_JOBS at a time */
 int cmd_fetch(int argc, char **argv);
 int cmd_checksum(int argc, char **argv);
+
+/* ---- flags.c: the build environment of a recipe ---- */
+typedef struct {
+	recipe *r;
+	shenv v;       /* the build's variables (toolchain, flags, paths), on top of the recipe's */
+	char *envfile; /* WORK/env.sh: the shell state of recipe functions (shrun.c) */
+	int log_fd;    /* the build log, appended to; -1 before it is open */
+} build;
+void build_init(build *b, recipe *r); /* takes r */
+void build_free(build *b);
+const char *bget(const build *b, const char *name); /* "" when unset */
+bool bon(const build *b, const char *name);         /* ((name)) */
+void bset(build *b, const char *name, const char *val);
+void bexport(build *b, const char *name, const char *val);
+/* the environment of programs the build runs: ours and every exported variable */
+void build_environ(const build *b, svec *env);
+long long recipe_epoch(const recipe *r);
+/* the prototype's recipe_env: toolchain, CFLAGS/LDFLAGS, BUILDID, ccache */
+void recipe_env(build *b);
+
+/* ---- buildtype.c: build_type= in C ---- */
+typedef struct bt_ctx {
+	const shenv *v; /* the variables: SRC, BUILD, CFLAGS, configure_args, ... */
+	svec *env;      /* the environment of the programs */
+	/* the lines a recipe function (configure_extra, ...) prints: its extra arguments */
+	void (*extra)(struct bt_ctx *c, const char *fn, svec *out);
+	void *user;
+} bt_ctx;
+bool bt_known(const char *type);
+bool bt_has(const char *type, const char *phase);
+int bt_run(const char *type, const char *phase, bt_ctx *c); /* exit status */
+int bt_main(int argc, char **argv);                         /* burn __bt TYPE PHASE ... */
+
+/* ---- shrun.c: recipe functions, run by bash ---- */
+void shrun_write_env(build *b, const char *type, const char *file); /* type NULL: no bt_* (unpack) */
+/* argv for bash running FN (cd "$SRC" first when in_src); free with sv_free */
+void shrun_argv(const build *b, const char *fn, bool in_src, svec *argv);
+/* the lines FN prints, run here (mapfile -t), when the recipe defines FN */
+void shrun_lines(const build *b, char **envp, const char *fn, svec *out);
+
+/* ---- build.c ---- */
+char *build_pkg(const char *name); /* the package file in the cache, built unless cached */
+int cmd_build(int argc, char **argv);
+int cmd_unpack(int argc, char **argv);
+
+/* ---- deps.c ---- */
+void deps_resolve(const svec *names, svec *order); /* what to build, dependencies first */
+void deps_order_set(const svec *names, svec *order); /* NAMES, dependencies inside the set first */
+bool pkg_uptodate(const char *name);               /* installed from this recipe and features */
 
 /* ---- cmd_recipe.c ---- */
 int cmd_search(int argc, char **argv);
