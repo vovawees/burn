@@ -74,6 +74,7 @@ static void fetch_one(const char *spec, const char *file, const char *sum, const
 	if (!sum_ok(file, sum)) {
 		char *bad = xasprintf("%s.bad", file);
 		rename(file, bad);
+		free(bad);
 		die("%s: sha256 mismatch for %s (moved aside as .bad)", pkg, s.name);
 	}
 	source_spec_free(&s);
@@ -174,6 +175,7 @@ void prefetch(const svec *names)
 		if (pid < 0)
 			die_errno("fork");
 		if (pid == 0) {
+			die_hook = NULL;
 			fetch_one(specs.v[i], files.v[i], sums.v[i], pkgs.v[i]);
 			_exit(0);
 		}
