@@ -37,9 +37,10 @@ tests/%: tests/%.c $(LIBOBJ) $(HDR)
 	$(CC) $(CPPFLAGS) $(BURN_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIBOBJ) $(LDLIBS)
 
 # RECIPES=../CleanLinux-Recipes/packages also compares every recipe with bash
-check: burn tests/unit tests/shdump tests/tarls
+check: burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan
 	./tests/unit
-	sh tests/tar.sh tests/tarls
+	sh tests/tar.sh tests/tarls tests/tarw
+	sh tests/elf.sh tests/elfscan
 	sh tests/shcompat.sh tests/shdump $(RECIPES)
 	sh tests/cli.sh ./burn
 
@@ -54,6 +55,6 @@ install: burn
 	install -Dm755 burn $(DESTDIR)$(BINDIR)/burn
 
 clean:
-	rm -f burn tests/unit tests/shdump tests/tarls src/*.o
+	rm -f burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan src/*.o
 
 .PHONY: all check proto install clean

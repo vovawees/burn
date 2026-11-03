@@ -1,9 +1,11 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# tests/tar.sh TARLS: the C reader against Python's tarfile on archives GNU tar writes in every
-# format it has (gnu, ustar, pax), with long names, long link targets, hard links and odd modes.
+# tests/tar.sh TARLS [TARW]: the C reader against Python's tarfile on archives GNU tar writes in
+# every format it has (gnu, ustar, pax), with long names, long link targets, hard links and odd
+# modes; the C writer against GNU tar, byte for byte.
 set -eu
 tarls=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+tarw=${2:+$(cd "$(dirname "$2")" && pwd)/$(basename "$2")}
 command -v python3 >/dev/null || {
 	echo "tar: python3 not found, skipped"
 	exit 0
@@ -64,6 +66,32 @@ PY
 	fi
 	n=$((n + $(wc -l <"$tmp/got")))
 done
+# the writer: the tar stream is what GNU tar writes for the same tree, byte for byte (sockets
+# skipped, mtimes newer than the epoch clamped, older ones kept); zstd checks the frame checksum
+if [ -n "$tarw" ]; then
+	touch -d @1600000000 "$d/usr/lib/libx.so.1.0"
+	touch -h -d @1600000000 "$d/usr/bin/hi"
+	python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$d/sock"
+	(cd "$d" && LC_ALL=C tar --format=gnu --sort=name --numeric-owner --owner=0 --group=0 \
+		--mtime=@1700000000 --clamp-mtime -cf - . 2>/dev/null) >"$tmp/gnu.tar"
+	"$tarw" "$d" "$tmp/w.tar.zst" 1700000000
+	zstd -dcq "$tmp/w.tar.zst" >"$tmp/w.tar"
+	if ! cmp -s "$tmp/gnu.tar" "$tmp/w.tar"; then
+		echo "FAIL: the writer differs from GNU tar"
+		cmp "$tmp/gnu.tar" "$tmp/w.tar" || true
+		exit 1
+	fi
+	"$tarls" "$tmp/w.tar.zst" >"$tmp/got"
+	if ! grep -q ' 1600000000 - usr/bin/hi -> hello$' "$tmp/got" || grep -q sock "$tmp/got" || [ -e "$tmp/w.tar.zst.part" ]; then
+		echo "FAIL: writer: old mtimes, sockets or the .part file"
+		exit 1
+	fi
+	if "$tarw" "$tmp/missing" "$tmp/m.tar.zst" 0 2>/dev/null || [ -e "$tmp/m.tar.zst" ] || [ -e "$tmp/m.tar.zst.part" ]; then
+		echo "FAIL: writer: a failure must leave nothing behind"
+		exit 1
+	fi
+	n=$((n + $(wc -l <"$tmp/got")))
+fi
 # damaged archives are errors, never a partial success
 f=$tmp/t-gnu.tar.zst
 head -c 2000 "$f" >"$tmp/cut.tar.zst"
@@ -90,4 +118,4 @@ PY
 		exit 1
 	fi
 done
-echo "tar: $n entries in 3 formats, OK"
+echo "tar: $n entries in 3 formats${tarw:+ and written}, OK"

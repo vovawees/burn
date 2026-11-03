@@ -48,4 +48,10 @@ void tar_close(tar_reader *t);
 /* "./a//b/" -> "a/b"; NULL for ".." components */
 char *tar_normalize(const char *p);
 
+/* DIR as a zstd compressed tar at OUT, the way burn packs packages: "./" first, then every entry
+ * sorted by name (byte order) with its directory before its contents, owner 0:0 without names,
+ * mtimes clamped to EPOCH, hard links kept, GNU long names. LEVEL and THREADS (0: all CPUs) are
+ * zstd's. 0, or -1 and *err. */
+int tar_write_dir(const char *dir, const char *out, int64_t epoch, int level, int threads, char **err);
+
 #endif

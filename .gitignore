@@ -2,5 +2,7 @@
 /tests/unit
 /tests/shdump
 /tests/tarls
+/tests/tarw
+/tests/elfscan
 *.o
 /build/
