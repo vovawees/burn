@@ -306,6 +306,22 @@ bool sv_has(const svec *v, const char *s)
 	return sv_index(v, s) >= 0;
 }
 
+bool sv_bsearch(const svec *v, const char *s)
+{
+	size_t lo = 0, hi = v->n;
+	while (lo < hi) {
+		size_t mid = lo + (hi - lo) / 2;
+		int c = strcmp(v->v[mid], s);
+		if (!c)
+			return true;
+		if (c < 0)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	return false;
+}
+
 void sv_remove(svec *v, size_t i)
 {
 	if (i >= v->n)

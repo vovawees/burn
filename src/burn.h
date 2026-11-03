@@ -96,13 +96,27 @@ void source_spec_free(source_spec *s);
 
 /* ---- db.c ---- */
 bool db_has(const char *name);
-char *db_get(const char *name, const char *key); /* NULL when missing */
+void db_list(svec *out);                                   /* installed packages, byte order */
+char *db_path(const char *name, const char *file);         /* $DB_DIR/name/file */
+void db_lines(const char *name, const char *file, svec *out); /* appends; missing: none */
+const char *meta_get(const svec *meta, const char *key);   /* "" when missing */
+char *db_get(const char *name, const char *key);           /* NULL when missing */
 bool is_held(const char *name);
+void need_write(void); /* root for /, and the lock: dies when another burn works on ROOT */
 
 /* ---- cmd_recipe.c ---- */
 int cmd_search(int argc, char **argv);
 int cmd_info(int argc, char **argv);
 int cmd_query(int argc, char **argv);
 int cmd_lint(int argc, char **argv);
+
+/* ---- cmd_db.c ---- */
+int cmd_list(int argc, char **argv);
+int cmd_files(int argc, char **argv);
+int cmd_owner(int argc, char **argv);
+int cmd_hold(int argc, char **argv);
+int cmd_unhold(int argc, char **argv);
+int cmd_history(int argc, char **argv);
+int cmd_doctor(int argc, char **argv);
 
 #endif

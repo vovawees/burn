@@ -35,4 +35,34 @@ b profile show | grep -q '^description  *Test machine$' || fail "profile show"
 b -p handheld profile show | grep -q '^video_cards  *amdgpu$' || fail "profile inherit"
 [ "$(b profile list | grep -c .)" -ge 2 ] || fail "profile list"
 if b -p nosuchprofile profile show 2>/dev/null; then fail "unknown profile must fail"; fi
+# the database
+db=$tmp/root/var/lib/burn/installed
+mkdir -p "$db/zstd" "$tmp/root/var/lib/burn/state"
+printf 'name=zstd\nversion=1.5.7\nrelease=2\n' >"$db/zstd/meta"
+printf 'usr/\nusr/bin/\nusr/bin/zstd\nusr/lib/\nusr/lib/libzstd.so.1\n' >"$db/zstd/files"
+printf 'libzstd.so.1\n' >"$db/zstd/provides-so"
+printf 'libzstd.so.1\n' >"$db/zstd/needs-so"
+[ "$(b list)" = "zstd                     1.5.7-2" ] || fail "list"
+[ "$(b files zstd)" = "$(printf '/usr/bin/zstd\n/usr/lib/libzstd.so.1')" ] || fail "files"
+[ "$(b owner "$tmp/root/usr/bin/zstd")" = "/usr/bin/zstd is owned by zstd 1.5.7-2" ] || fail "owner in the root"
+[ "$(b owner /usr/sbin/zstd)" = "/usr/bin/zstd is owned by zstd 1.5.7-2" ] || fail "owner: merged /usr"
+if b owner /usr/bin/nothing 2>/dev/null; then fail "owner: nobody owns it"; fi
+b doctor 2>&1 | grep -q 'no problems found (1 packages)' || fail "doctor"
+b hold zstd 2>/dev/null
+b list | grep -q '\[held\]$' || fail "hold"
+b unhold zstd 2>/dev/null
+[ -z "$(b hold)" ] || fail "unhold"
+b history 2>&1 | grep -q 'no transactions yet' || fail "history: empty"
+echo '2026-01-02T03:04:05Z|install|zstd|-|1.5.7-2|' >"$tmp/root/var/lib/burn/state/history"
+[ "$(b history)" = "2026-01-02T03:04:05Z  install   zstd                   - -> 1.5.7-2" ] || fail "history"
+if command -v flock >/dev/null; then
+	if flock "$tmp/root/var/lib/burn/lock" env BURN_PROFILE_DIR="$tmp/profiles" "$BURN" -r "$tmp/root" hold x 2>"$tmp/err"; then
+		fail "the lock must keep a second burn out"
+	fi
+	grep -q 'another burn process is working on' "$tmp/err" || fail "lock message"
+fi
+if [ "$(id -u)" != 0 ]; then
+	if env BURN_PROFILE_DIR="$tmp/profiles" "$BURN" -r / hold x 2>"$tmp/err"; then fail "/ needs root"; fi
+	grep -q 'run it as root' "$tmp/err" || fail "root message"
+fi
 echo "cli: OK"

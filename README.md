@@ -39,7 +39,7 @@ sudo make install        # PREFIX=/usr DESTDIR=
 | парсер языка рецептов (сверка с bash на всех рецептах) | — | ✅ |
 | рецепты, особенности, зависимости | `info`, `query`, `search`, `lint` | ✅ |
 | конфиг, профили, цель и CPU, определение железа | `profile` | ✅ |
-| база пакетов | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` | ⏳ |
+| база пакетов | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` | ✅ |
 | пакеты: tar + zstd, атомарная установка, удаление, триггеры | `install <файл>`, `remove` | ⏳ |
 | сборка, флаги пакета | `fetch`, `unpack`, `build`, `install`, `checksum` | ⏳ |
 | rolling+++ | `sync`, `plan`, `update`, `rollback` | ⏳ |

@@ -60,6 +60,7 @@ void sv_push_own(svec *v, char *s);
 void sv_pushf(svec *v, const char *fmt, ...) PRINTF(2, 3);
 void sv_extend(svec *v, const svec *w);
 bool sv_has(const svec *v, const char *s);
+bool sv_bsearch(const svec *v, const char *s); /* v sorted by sv_sort */
 ssize_t sv_index(const svec *v, const char *s);
 void sv_remove(svec *v, size_t i);
 void sv_sort(svec *v);      /* byte order (LC_ALL=C sort) */

@@ -95,6 +95,8 @@ static void test_strings(void)
 	CHECK_STR(j, "a,b,c");
 	free(j);
 	CHECK(v.v[v.n] == NULL);
+	CHECK(sv_bsearch(&v, "a") && sv_bsearch(&v, "b") && sv_bsearch(&v, "c"));
+	CHECK(!sv_bsearch(&v, "") && !sv_bsearch(&v, "bb") && !sv_bsearch(&v, "d"));
 	sv_remove(&v, 1);
 	j = sv_join(&v, " ");
 	CHECK_STR(j, "a c");
