@@ -69,11 +69,11 @@ static const command commands[] = {
 	{"profile", cmd_profile}, {"list", cmd_list},     {"files", cmd_files},   {"owner", cmd_owner},
 	{"hold", cmd_hold},     {"unhold", cmd_unhold},   {"history", cmd_history}, {"doctor", cmd_doctor},
 	{"install", cmd_install}, {"remove", cmd_remove}, {"uninstall", cmd_remove}, {"rollback", cmd_rollback},
-	{"fetch", cmd_fetch},   {"checksum", cmd_checksum},
+	{"fetch", cmd_fetch},   {"checksum", cmd_checksum}, {"build", cmd_build},   {"unpack", cmd_unpack},
 };
 
 /* commands of the bash prototype that are not ported yet */
-static const char *const pending[] = {"sync", "unpack", "build", "plan", "update", "upgrade", NULL};
+static const char *const pending[] = {"sync", "plan", "update", "upgrade", NULL};
 
 static bool takes_value(const char *a)
 {
@@ -98,6 +98,9 @@ int main(int argc, char **argv)
 		printf("%d\n", vercmp(argv[2], argv[3]));
 		return 0;
 	}
+	/* bt_configure, bt_build, ... of recipe functions: everything comes on the command line */
+	if (argc >= 2 && !strcmp(argv[1], "__bt"))
+		return bt_main(argc - 2, argv + 2);
 	config_defaults();
 	const char *bc = getenv("BURN_CONFIG");
 	B.config_file = bc && *bc ? xstrdup(bc) : NULL;

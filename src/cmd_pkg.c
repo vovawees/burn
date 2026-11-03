@@ -1,13 +1,26 @@
 /* SPDX-License-Identifier: MIT */
-/* Commands that change the packages of the root: install (package files), remove, rollback. */
+/* Commands that change the packages of the root: install (recipes and package files), remove,
+ * rollback. */
 #include "burn.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Packages linked against sonames that upgrades took away are rebuilt. Building is not in the
- * C version yet: the preserved old libraries keep them working until the prototype does it. */
+/* build NAMES (in this order) and install each package right away: what comes later may need it */
+static void build_install(const svec *names, const char *op)
+{
+	prefetch(names);
+	for (size_t i = 0; i < names->n; i++) {
+		triggers_run(); /* ldconfig for what is installed already, before anything links against it */
+		char *f = build_pkg(names->v[i]);
+		pkg_install_file(f, op);
+		free(f);
+	}
+}
+
+/* Packages linked against sonames that upgrades took away are rebuilt (the preserved old
+ * libraries kept them working meanwhile). */
 static void abi_followup(void)
 {
 	if (!txn_lost.n)
@@ -29,15 +42,47 @@ static void abi_followup(void)
 	char *lost = sv_join(&txn_lost, " ");
 	sv_clear(&txn_lost);
 	sv_free(&pkgs);
-	if (!rebuild.n) {
-		free(lost);
-		return;
+	if (rebuild.n) {
+		char *list = sv_join(&rebuild, " ");
+		msg("ABI change (%s): rebuilding %s", lost, list);
+		free(list);
+		svec order = SVEC_INIT;
+		deps_order_set(&rebuild, &order);
+		bool saved = B.rebuild;
+		B.rebuild = true;
+		build_install(&order, "rebuild");
+		B.rebuild = saved;
+		sv_free(&order);
+		preserved_cleanup();
 	}
-	char *list = sv_join(&rebuild, " ");
-	msg("ABI change (%s): rebuilding %s", lost, list);
-	die("building is not in burn %s yet: run 'burn --rebuild --nodeps install %s' with the bash prototype "
-	    "(CleanLinux/burn/burn); the old libraries are preserved until then",
-	    BURN_VERSION, list);
+	free(lost);
+	sv_free(&rebuild);
+}
+
+static void install_names(const svec *names)
+{
+	svec order = SVEC_INIT, todo = SVEC_INIT;
+	if (B.nodeps)
+		sv_extend(&order, names);
+	else
+		deps_resolve(names, &order);
+	for (size_t i = 0; i < order.n; i++) {
+		if (!B.force && !B.rebuild && pkg_uptodate(order.v[i])) {
+			msg2("%s is up to date", order.v[i]);
+			continue;
+		}
+		sv_push(&todo, order.v[i]);
+	}
+	if (todo.n) {
+		char *all = sv_join(&todo, " ");
+		msg("Packages (%zu): %s", todo.n, all);
+		free(all);
+		if (!confirm("Build and install them?"))
+			die("aborted, nothing changed");
+		build_install(&todo, NULL);
+	}
+	sv_free(&order);
+	sv_free(&todo);
 }
 
 int cmd_install(int argc, char **argv)
@@ -55,15 +100,16 @@ int cmd_install(int argc, char **argv)
 			sv_push(&names, argv[i]);
 		}
 	}
-	if (names.n)
-		die("'install <recipe>' is not in burn %s yet: use the bash prototype (CleanLinux/burn/burn) "
-		    "meanwhile, or give package files",
-		    BURN_VERSION);
 	for (size_t i = 0; i < files.n; i++)
 		pkg_install_file(files.v[i], NULL);
-	preserved_cleanup();
 	triggers_run();
+	if (names.n) {
+		install_names(&names);
+		triggers_run();
+	}
+	preserved_cleanup();
 	abi_followup();
+	triggers_run();
 	sv_free(&files);
 	sv_free(&names);
 	return 0;
