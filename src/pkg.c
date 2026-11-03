@@ -15,6 +15,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <fnmatch.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -125,12 +126,15 @@ static void pkg_free(pkg_info *p)
 
 svec txn_lost = SVEC_INIT;
 static bool trig_ldconfig, trig_modules;
+static svec trig_paths = SVEC_INIT; /* every path installed or removed, for the file triggers */
 
 static void triggers_note(const svec *files, bool libs)
 {
 	die_hook = triggers_run; /* what is installed gets its triggers even when burn stops later */
 	for (size_t i = 0; i < files->n; i++) {
 		const char *f = files->v[i];
+		if (!str_suffix(f, "/"))
+			sv_push(&trig_paths, f);
 		if (str_prefix(f, "usr/lib/modules/") && f[16])
 			trig_modules = true;
 		if (libs && str_prefix(f, "usr/lib/")) { /* ^usr/lib/[^/]*\.so */
@@ -257,6 +261,70 @@ static void modules_trigger(void)
 	free(base);
 }
 
+/* File triggers of packages: usr/share/burn/triggers/NAME.trigger in the root, read when the
+ * transaction ends (a trigger installed with the files it watches applies to them as well):
+ *
+ *   path=usr/lib/firmware/amd-ucode*   one or more globs (fnmatch: '*' stays in a directory)
+ *   run=/usr/bin/prog --root $ROOT sync  a program of /usr/bin of the root; $ROOT is the root
+ *
+ * Each trigger runs once per transaction when an installed or removed path matches, in the
+ * order of the file names, after ldconfig and depmod. The program is the root's own, run like
+ * depmod: through the root's loader when it has one. */
+static void file_triggers(void)
+{
+	char *dir = xasprintf("%s/usr/share/burn/triggers", B.R);
+	svec defs = SVEC_INIT;
+	glob_paths(dir, "*.trigger", &defs);
+	for (size_t d = 0; d < defs.n; d++) {
+		char *text = file_read(defs.v[d], NULL);
+		if (!text)
+			continue;
+		svec globs = SVEC_INIT;
+		char *cmd = NULL;
+		for (char *save = NULL, *l = strtok_r(text, "\n", &save); l; l = strtok_r(NULL, "\n", &save)) {
+			while (*l == ' ' || *l == '\t')
+				l++;
+			if (str_prefix(l, "path="))
+				sv_push(&globs, l + 5);
+			else if (str_prefix(l, "run=")) {
+				free(cmd);
+				cmd = xstrdup(l + 4);
+			} else if (*l && *l != '#')
+				warn("%s: unknown line: %s", defs.v[d], l);
+		}
+		bool hit = false;
+		for (size_t g = 0; g < globs.n && !hit; g++)
+			for (size_t i = 0; i < trig_paths.n && !hit; i++)
+				hit = fnmatch(globs.v[g], trig_paths.v[i], FNM_PATHNAME) == 0;
+		if (hit && cmd) {
+			svec args = SVEC_INIT;
+			char *prog = NULL;
+			for (char *save = NULL, *w = strtok_r(cmd, " \t", &save); w; w = strtok_r(NULL, " \t", &save)) {
+				if (!prog) {
+					prog = w;
+					continue;
+				}
+				sv_push(&args, !strcmp(w, "$ROOT") ? (*B.R ? B.R : "/") : w);
+			}
+			const char *base = path_base(defs.v[d]);
+			if (!prog || !str_prefix(prog, "/usr/bin/") || strchr(prog + 9, '/')) {
+				warn("trigger %s: run= must name a program of /usr/bin", base);
+			} else {
+				msg2("trigger %.*s", (int)(strlen(base) - 8), base);
+				int rc = root_run(prog + 9, sv_argv(&args), false);
+				if (rc != 0)
+					warn("trigger %.*s failed (%s, status %d)", (int)(strlen(base) - 8), base, prog, rc);
+			}
+			sv_free(&args);
+		}
+		free(cmd);
+		sv_free(&globs);
+		free(text);
+	}
+	sv_free(&defs);
+	free(dir);
+}
+
 void triggers_run(void)
 {
 	if (trig_ldconfig && geteuid() == 0) {
@@ -279,6 +347,10 @@ void triggers_run(void)
 	trig_ldconfig = trig_modules = false;
 	if (modules)
 		modules_trigger();
+	if (trig_paths.n) {
+		file_triggers();
+		sv_free(&trig_paths);
+	}
 }
 
 /* ---- history ---- */

@@ -106,6 +106,23 @@ if command -v zstd >/dev/null && tar --version 2>/dev/null | grep -q GNU; then
 	if b install "$pkgs/junk.pkg.tar.zst" 2>"$tmp/err"; then fail "junk must fail"; fi
 	grep -q 'junk.pkg.tar.zst: truncated archive' "$tmp/err" || fail "junk message: $(cat "$tmp/err")"
 	if b install "$pkgs/missing.pkg.tar.zst" 2>/dev/null; then fail "missing file must fail"; fi
+	# file triggers: a package's usr/share/burn/triggers/*.trigger, run after the transaction
+	mkdir -p "$tmp/dest/usr/share/burn/triggers" "$tmp/dest/usr/bin"
+	printf '# test\npath=usr/lib/modules/*/vmlinuz\npath=usr/lib/other/*\nrun=/usr/bin/trig --root $ROOT\n' \
+		>"$tmp/dest/usr/share/burn/triggers/kernel.trigger"
+	printf '#!/bin/sh\necho "$*" >>"$2/triggered"\n' >"$tmp/dest/usr/bin/trig" && chmod 755 "$tmp/dest/usr/bin/trig"
+	mkpkg trig 1 '' '' ''
+	mkdir -p "$tmp/dest/usr/lib/modules/1.0" && echo k >"$tmp/dest/usr/lib/modules/1.0/vmlinuz"
+	mkpkg kern 1 '' '' ''
+	mkdir -p "$tmp/dest/usr/share/doc" && echo x >"$tmp/dest/usr/share/doc/x"
+	mkpkg other 1 '' '' ''
+	b install "$pkgs/trig-1.pkg.tar.zst" "$pkgs/kern-1.pkg.tar.zst" 2>"$tmp/err" || fail "install with a trigger"
+	[ "$(cat "$tmp/root/triggered")" = "--root $tmp/root" ] || fail "trigger: run once, \$ROOT: $(cat "$tmp/err")"
+	grep -q 'trigger kernel' "$tmp/err" || fail "trigger message"
+	b install "$pkgs/other-1.pkg.tar.zst" 2>/dev/null || fail "install other"
+	[ "$(wc -l <"$tmp/root/triggered")" -eq 1 ] || fail "trigger: unrelated paths do not run it"
+	b -y remove kern 2>/dev/null || fail "remove kern"
+	[ "$(wc -l <"$tmp/root/triggered")" -eq 2 ] || fail "trigger: removals run it"
 fi
 # sources: parallel downloads from a mirror, sha256 inside burn
 if command -v curl >/dev/null || command -v wget >/dev/null; then
