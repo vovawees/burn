@@ -29,7 +29,8 @@ make proto               # каждая готовая команда проти
 sudo make install        # PREFIX=/usr DESTDIR=
 ```
 
-Нужны компилятор C17 (GCC или Clang), glibc и libzstd.
+Нужны компилятор C17 (GCC или Clang), glibc и libzstd. Для `make proto` ещё bash, GNU tar, zstd, patch, unzip,
+python3, autoconf, cmake, meson и ninja: тестовые рецепты собираются обеими версиями.
 
 ## Статус переноса
 
@@ -42,7 +43,7 @@ sudo make install        # PREFIX=/usr DESTDIR=
 | база пакетов | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` | ✅ |
 | пакеты: tar + zstd в процессе, атомарная установка, удаление, откат, сохранённые библиотеки, триггеры | `install <файл>`, `remove`, `rollback` | ✅ |
 | источники: параллельная загрузка, sha256 внутри процесса | `fetch`, `checksum` | ✅ |
-| сборка, флаги пакета | `unpack`, `build`, `install <рецепт>` | ⏳ |
+| сборка: флаги пакета, типы сборки в C (bash — только для функций рецепта), чистка, ABI-пересборка | `unpack`, `build`, `install <рецепт>` | ✅ |
 | rolling+++ | `sync`, `plan`, `update` | ⏳ |
 
 Пока команды из ⏳ не готовы, их делает bash-прототип: C-версия и прототип работают с одной и той же базой
