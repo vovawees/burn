@@ -6,3 +6,4 @@
 /tests/elfscan
 *.o
 /build/
+/src/prelude.inc

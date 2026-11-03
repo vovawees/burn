@@ -33,6 +33,11 @@ burn: $(OBJ)
 src/%.o: src/%.c $(HDR)
 	$(CC) $(CPPFLAGS) $(BURN_CFLAGS) $(CFLAGS) -c -o $@ $<
 
+# the shell helpers of recipe functions, compiled in as a C string
+src/prelude.inc: src/prelude.sh
+	sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/^/"/' -e 's/$$/\\n"/' $< >$@
+src/shrun.o: src/prelude.inc
+
 tests/%: tests/%.c $(LIBOBJ) $(HDR)
 	$(CC) $(CPPFLAGS) $(BURN_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIBOBJ) $(LDLIBS)
 
@@ -43,6 +48,7 @@ check: burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan
 	sh tests/elf.sh tests/elfscan
 	sh tests/shcompat.sh tests/shdump $(RECIPES)
 	sh tests/cli.sh ./burn
+	if command -v shellcheck >/dev/null; then shellcheck src/prelude.sh; fi
 
 # the C version against the bash prototype, command by command, on the same staging root
 PROTO ?= ../CleanLinux/burn/burn
@@ -55,6 +61,6 @@ install: burn
 	install -Dm755 burn $(DESTDIR)$(BINDIR)/burn
 
 clean:
-	rm -f burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan src/*.o
+	rm -f burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan src/*.o src/prelude.inc
 
 .PHONY: all check proto install clean
