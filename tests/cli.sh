@@ -122,6 +122,17 @@ if command -v curl >/dev/null || command -v wget >/dev/null; then
 	[ -f "$tmp/cache/sources/bad.txt.bad" ] || fail "bad download moved aside"
 	[ "$(f checksum fetchme | sed -n 2p)" = "	920036cf7afe3227e028562af93cd4c8be055794da11373062bcb8c2706650cd" ] || fail "checksum"
 fi
+# a build outlives the file of its burn (burn installed a new burn, then builds more): the
+# helpers of recipe functions still reach the running burn
+mkdir -p "$tmp/self/selfdel"
+cp "$BURN" "$tmp/burn-copy"
+# shellcheck disable=SC2016 # the recipe expands these
+printf '%s\n' 'name=selfdel' 'version=1' 'release=1' 'summary="burn replaced during a build"' \
+	'homepage=https://example.org/selfdel' 'license=(MIT)' 'category=extra' 'build_type=custom' \
+	'do_install() {' "	rm -f '$tmp/burn-copy'" '	[ "$(vercmp 2 1)" = 1 ]' \
+	'	mkdir -p "$DESTDIR/usr/share/selfdel"' '}' >"$tmp/self/selfdel/recipe"
+env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/cache" NO_COLOR=1 "$tmp/burn-copy" -r "$tmp/root" \
+	-R "$tmp/self" build selfdel >/dev/null 2>"$tmp/err" || fail "build without the burn file: $(cat "$tmp/err")"
 if [ "$(id -u)" != 0 ]; then
 	if env BURN_PROFILE_DIR="$tmp/profiles" "$BURN" -r / hold x 2>"$tmp/err"; then fail "/ needs root"; fi
 	grep -q 'run it as root' "$tmp/err" || fail "root message"

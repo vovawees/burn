@@ -78,10 +78,11 @@ void shrun_write_env(build *b, const char *type, const char *file)
 	sb_adds(&s, "set --\nset -o errexit -o nounset -o pipefail\nshopt -s nullglob extglob inherit_errexit\n");
 	sb_adds(&s, "# the configuration\n");
 	put_layer(&s, &B.cfg);
-	char self[4096];
-	ssize_t n = readlink("/proc/self/exe", self, sizeof self - 1);
-	self[n > 0 ? n : 0] = 0;
-	put_scalar(&s, "BURN_SELF", n > 0 ? self : "burn");
+	/* the helpers call back into exactly this burn: /proc/PID/exe stays valid while it runs, also
+	 * when an update has replaced the file meanwhile (burn installing burn, then building more) */
+	char self[32];
+	snprintf(self, sizeof self, "/proc/%ld/exe", (long)getpid());
+	put_scalar(&s, "BURN_SELF", access(self, X_OK) == 0 ? self : "burn");
 	put_scalar(&s, "BURN_VERSION", BURN_VERSION);
 	put_scalar(&s, "CLI_FEATURES", B.cli_features ? B.cli_features : "");
 	static const struct {
