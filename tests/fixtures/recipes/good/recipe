@@ -1,0 +1,16 @@
+name=good
+version=2.1
+release=3
+summary="A recipe without problems"
+homepage=https://example.org/good
+license=(MIT)
+category=core
+features=(+tls -docs)
+depends=('broken:tls')
+source=(https://example.org/good-$version.tar.gz local.patch)
+sha256=(
+	0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+	SKIP
+)
+patches=(local.patch fix.patch)
+backup=(etc/good.conf)

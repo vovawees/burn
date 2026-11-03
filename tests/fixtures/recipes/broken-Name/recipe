@@ -1,0 +1,20 @@
+# every lint rule, broken once
+name=broken
+version='1.0 beta'
+release=0
+summary=''
+homepage=example.org
+license=()
+category=extra2
+build_type=waf
+depends=(nosuchpkg 'good:nofeat' 'good:!tls')
+features=(+Bad 'ok' -_x)
+options=(!lto turbo)
+source=(
+	http://example.org/a.tar.gz
+	missing.patch
+	ftp.tar.gz::ftp://example.org/b.tar.gz
+	https://example.org/c.tar.gz
+)
+sha256=(SKIP abc)
+patches=(missing.patch nothere.patch)

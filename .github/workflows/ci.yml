@@ -33,3 +33,16 @@ jobs:
         run: >-
           make CFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
           LDFLAGS="-fsanitize=address,undefined" check RECIPES=../CleanLinux-Recipes/packages
+
+  prototype:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libzstd-dev zstd
+      - name: prototype and recipes
+        run: |
+          git clone -q --depth 1 https://github.com/vovawees/CleanLinux.git ../CleanLinux
+          git clone -q --depth 1 https://github.com/vovawees/CleanLinux-Recipes.git ../CleanLinux-Recipes
+      - name: every ported command against the bash prototype
+        run: make WERROR=1 proto

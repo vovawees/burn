@@ -13,6 +13,7 @@ typedef struct {
 	int log_fd;        /* > 0: stdout and stderr appended there */
 	bool tee;          /* with log_fd: also copied to our stderr */
 	sbuf *out;         /* capture stdout (stderr goes to log_fd, /dev/null when quiet, else ours) */
+	bool err_to_out;   /* with out: capture stderr too (2>&1) */
 } run_opts;
 
 /* Exit status of the program, 128 + signal, 127 when it cannot be started. */

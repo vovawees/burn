@@ -3,6 +3,7 @@
 #
 #   make                 build ./burn
 #   make check           unit + command line tests
+#   make proto           compare with the bash prototype: PROTO= RECIPES= PROFILES=
 #   make install         DESTDIR= PREFIX=/usr
 #   make WERROR=1        warnings are errors (CI)
 
@@ -41,10 +42,17 @@ check: burn tests/unit tests/shdump
 	sh tests/shcompat.sh tests/shdump $(RECIPES)
 	sh tests/cli.sh ./burn
 
+# the C version against the bash prototype, command by command, on the same staging root
+PROTO ?= ../CleanLinux/burn/burn
+RECIPES_DIR = $(or $(RECIPES),../CleanLinux-Recipes/packages)
+PROFILES ?= ../CleanLinux/profiles
+proto: burn
+	sh tests/proto.sh ./burn $(PROTO) $(RECIPES_DIR) $(PROFILES)
+
 install: burn
 	install -Dm755 burn $(DESTDIR)$(BINDIR)/burn
 
 clean:
 	rm -f burn tests/unit tests/shdump src/*.o
 
-.PHONY: all check install clean
+.PHONY: all check proto install clean

@@ -27,7 +27,9 @@ static NORETURN void child(char *const argv[], const run_opts *o, int pipe_w)
 		dup2(null, 0);
 	if (o->out) {
 		dup2(pipe_w, 1);
-		if (o->log_fd > 0)
+		if (o->err_to_out)
+			dup2(pipe_w, 2);
+		else if (o->log_fd > 0)
 			dup2(o->log_fd, 2);
 		else if (o->quiet)
 			dup2(null, 2);

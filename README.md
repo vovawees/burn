@@ -25,6 +25,7 @@
 ```sh
 make
 make check               # RECIPES=../CleanLinux-Recipes/packages: ещё и сверка всех рецептов с bash
+make proto               # каждая готовая команда против bash-прототипа (рядом ../CleanLinux и ../CleanLinux-Recipes)
 sudo make install        # PREFIX=/usr DESTDIR=
 ```
 
@@ -36,11 +37,11 @@ sudo make install        # PREFIX=/usr DESTDIR=
 |---|---|---|
 | основа: вывод, строки, файлы, процессы, SHA-256, сравнение версий | `vercmp` | ✅ |
 | парсер языка рецептов (сверка с bash на всех рецептах) | — | ✅ |
-| рецепты, особенности, зависимости | `info`, `query`, `search`, `lint` | ⏳ |
-| конфиг, профили, флаги компилятора | `profile` | ⏳ |
+| рецепты, особенности, зависимости | `info`, `query`, `search`, `lint` | ✅ |
+| конфиг, профили, цель и CPU, определение железа | `profile` | ✅ |
 | база пакетов | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` | ⏳ |
 | пакеты: tar + zstd, атомарная установка, удаление, триггеры | `install <файл>`, `remove` | ⏳ |
-| сборка | `fetch`, `unpack`, `build`, `install`, `checksum` | ⏳ |
+| сборка, флаги пакета | `fetch`, `unpack`, `build`, `install`, `checksum` | ⏳ |
 | rolling+++ | `sync`, `plan`, `update`, `rollback` | ⏳ |
 
 Устройство, форматы и решения — в [docs/DESIGN.md](docs/DESIGN.md).
