@@ -27,6 +27,7 @@
 make
 make check               # RECIPES=../CleanLinux-Recipes/packages: ещё и сверка всех рецептов с bash
 make proto               # каждая готовая команда против bash-прототипа (рядом ../CleanLinux и ../CleanLinux-Recipes)
+make check-btrfs         # снимки на настоящей btrfs (loop-устройство; KERNEL=bzImage — в qemu)
 sudo make install        # PREFIX=/usr DESTDIR=
 ```
 
@@ -46,6 +47,7 @@ python3, autoconf, cmake, meson и ninja: тестовые рецепты соб
 | источники: параллельная загрузка, sha256 внутри процесса | `fetch`, `checksum` | ✅ |
 | сборка: флаги пакета, типы сборки в C (bash — только для функций рецепта), чистка, ABI-пересборка | `unpack`, `build`, `install <рецепт>` | ✅ |
 | rolling+++: репозитории рецептов, план с рисками и списком изменений, «сначала собрать всё, потом применить», хуки | `sync`, `plan`, `update` | ✅ |
+| снимок btrfs перед обновлением через ioctl (без btrfs-progs; у прототипа был хуком) | `snapshot` | ✅ |
 
 C-версия и прототип работают с одной и той же базой и одним кэшем пакетов, так что их можно чередовать.
 
