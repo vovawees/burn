@@ -51,6 +51,21 @@ printf 'zstd\ngood\n' >"$root/etc/burn/hold"
 } >"$root/var/lib/burn/state/history"
 cp -r "$here/fixtures/recipes" "$tmp/fixtures"
 sh "$here/mksources.sh" "$here/fixtures/src" "$tmp/fixtures"
+# sync, plan and update: a recipe repository; their roots and hooks are set up by "@" lines
+sh "$here/mkrepo.sh" "$tmp/uprepo.git"
+mkdir -p "$tmp/up"
+printf 'RECIPE_REPOS=(file://%s/uprepo.git)\nBURN_REPO_DIR=%s/cache/repos\nCORE_PKGS=(glibc up-lib)\nLOCALES=en\n' \
+	"$tmp" "$tmp" >"$tmp/up/up.conf"
+printf 'RECIPE_REPOS=(file:///nonexistent/burn-test/repo.git)\nBURN_REPO_DIR=%s/cache/repos-dead\n' "$tmp" >"$tmp/up/dead.conf"
+# shellcheck disable=SC2016 # hooks get ROOT
+{
+	printf '#!/bin/sh\necho "pre-update in $ROOT"\nexit 1\n' >"$tmp/up/pre-fail"
+	printf '#!/bin/sh\necho "snapshot of $ROOT"\n' >"$tmp/up/pre-ok"
+	printf '#!/bin/sh\necho "post-update done"\n' >"$tmp/up/post-ok"
+	printf '#!/bin/sh\necho "post-update failed" >&2\nexit 2\n' >"$tmp/up/post-fail"
+	printf '#!/bin/sh\necho "not executable"\n' >"$tmp/up/not-executable"
+}
+chmod +x "$tmp/up/pre-fail" "$tmp/up/pre-ok" "$tmp/up/post-ok" "$tmp/up/post-fail"
 # meson and cmake may come from pip (~/.local), and HOME changes below
 PYTHONUSERBASE=${PYTHONUSERBASE:-$HOME/.local}
 export PYTHONUSERBASE
@@ -341,6 +356,37 @@ list=$tmp/commands
 	echo "doctor"
 	echo "history"
 	echo "-y remove bt-meta bt-app bt-lib bt-missing"
+	# rolling+++ in a root of its own: sync, plan (upgrade, downgrade, rebuild, held, orphan,
+	# broken recipe, risks, changelog), update (hooks, ABI rebuild, state)
+	u="-r $root/up" hooks=$root/up/etc/burn/hooks
+	echo "@ mkdir -p $root/up/etc/burn && cp $tmp/up/up.conf $root/up/etc/burn/burn.conf"
+	echo "$u plan"
+	echo "$u sync"
+	echo "$u sync"
+	echo "$u -y install up-lib up-app up-held up-feat up-gone up-broken up-down"
+	echo "$u hold up-held"
+	echo "$u plan"
+	echo "$u --no-sync update"
+	echo "@ git -C $tmp/uprepo.git update-ref refs/heads/main refs/heads/next"
+	echo "$u plan"
+	echo "$u sync"
+	echo "$u plan"
+	echo "$u update"
+	echo "@ mkdir -p $hooks/pre-update.d && cp $tmp/up/pre-fail $hooks/pre-update.d/10-snapshot"
+	echo "$u --no-sync -y update"
+	echo "@ cp $tmp/up/pre-ok $hooks/pre-update.d/10-snapshot && mkdir -p $hooks/post-update.d && cp $tmp/up/post-ok $hooks/post-update.d/10-ok && cp $tmp/up/post-fail $hooks/post-update.d/20-fail && cp $tmp/up/not-executable $hooks/post-update.d/30-not-executable"
+	echo "$u --no-sync -y update"
+	echo "$u history"
+	echo "$u list"
+	echo "$u plan"
+	echo "@ git -C $tmp/uprepo.git update-ref refs/heads/main refs/heads/next2"
+	echo "$u sync"
+	echo "$u plan"
+	echo "$u -y upgrade"
+	echo "$u doctor"
+	echo "@ mkdir -p $root/up2/etc/burn && cp $tmp/up/dead.conf $root/up2/etc/burn/burn.conf"
+	echo "-r $root/up2 sync"
+	echo "-r $root/up2 update"
 	for v in name version release summary homepage license category source sha256 build_type srcdir \
 		depends makedepends features patches patch_strip options backup noextract configure_args \
 		meson_args cmake_args make_args make_install_args cargo_args out_of_tree meson_subdir \
@@ -381,7 +427,11 @@ snapshot() {
 			awk '$2 != "d" { split($5, t, "."); $5 = t[1] > 1700000000 ? "now" : t[1] } { print }' | LC_ALL=C sort
 		find . -type f ! -path ./var/lib/burn/lock | LC_ALL=C sort | while IFS= read -r f; do
 			echo "== $f"
-			case $f in */history) sed 's/^[0-9-]*T[0-9:]*Z|/DATE|/' "$f" ;; *) cat "$f" ;; esac
+			case $f in
+				*/history) sed 's/^[0-9-]*T[0-9:]*Z|/DATE|/' "$f" ;;
+				*/last-update) echo DATE ;;
+				*) cat "$f" ;;
+			esac
 			echo
 		done
 	)
@@ -393,12 +443,13 @@ normalize_log() {
 	sed 's/^# burn [^ :]*: \(.*\), [^,]*$/# burn: \1, DATE/; s/^\(-- [A-Za-z]* done\) ([0-9.]*s)$/\1/' "$@"
 }
 
-# The cache as text: every path with its type (but the temporary work directory), the contents
-# of downloaded sources and of build logs, the checksum of packages.
+# The cache as text: every path with its type (but the temporary work directory and the insides
+# of git repositories), the contents of downloaded sources and of build logs, the checksum of
+# packages.
 snapshot_cache() {
 	(
 		cd "$1" || exit 1
-		find . -path ./work -prune -o -printf '%p %y\n' | LC_ALL=C sort
+		find . -path ./work -prune -o -name .git -prune -o -printf '%p %y\n' | LC_ALL=C sort
 		find ./sources ./logs -type f 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
 			echo "== $f"
 			normalize_log "$f"
