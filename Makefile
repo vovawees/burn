@@ -4,6 +4,7 @@
 #   make                 build ./burn
 #   make check           unit + command line tests
 #   make proto           compare with the bash prototype: PROTO= RECIPES= PROFILES=
+#   make check-btrfs     snapshots on a real btrfs (loop device; KERNEL=bzImage: in qemu)
 #   make install         DESTDIR= PREFIX=/usr
 #   make WERROR=1        warnings are errors (CI)
 
@@ -57,10 +58,14 @@ PROFILES ?= ../CleanLinux/profiles
 proto: burn
 	sh tests/proto.sh ./burn $(PROTO) $(RECIPES_DIR) $(PROFILES)
 
+# snapshots on a real btrfs: a loop device (root or sudo), or in qemu with KERNEL=bzImage
+check-btrfs: burn
+	if [ -n "$(KERNEL)" ]; then sh tests/qemu-btrfs.sh $(KERNEL) ./burn; else sh tests/btrfs.sh ./burn; fi
+
 install: burn
 	install -Dm755 burn $(DESTDIR)$(BINDIR)/burn
 
 clean:
 	rm -f burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan src/*.o src/prelude.inc
 
-.PHONY: all check proto install clean
+.PHONY: all check check-btrfs proto install clean
