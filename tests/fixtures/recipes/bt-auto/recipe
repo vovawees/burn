@@ -1,0 +1,38 @@
+name=bt-auto
+version=1.0
+release=1
+summary="autotools build type: configure out of tree, patches, check"
+homepage=https://example.org/bt-auto
+license=(MIT)
+category=extra
+build_type=autotools
+features=(+nls)
+source=(bt-auto-$version.tar.gz extras-$version.tar.gz)
+sha256=(SKIP SKIP)
+patches=(greeting.patch)
+out_of_tree=1
+configure_args=(--with-greeting=hi --enable-x)
+make_args=(V=1)
+make_install_args=(INSTALL_EXTRA=1)
+
+configure_extra() {
+	echo "--enable-nls=${FEAT[nls]}"
+	echo "--with-space=a b"
+}
+
+post_install() {
+	echo "post_install in ${PWD##*/}"
+	ls "$WORK/src"
+}
+
+do_configure() {
+	echo "before: ${PWD##*/}"
+	bt_configure
+	echo "after: ${PWD##*/}"
+}
+
+do_install() {
+	bt_install
+	echo "install in ${PWD##*/}"
+	ln -s bt-auto "$DESTDIR/usr/bin/bt-hi"
+}

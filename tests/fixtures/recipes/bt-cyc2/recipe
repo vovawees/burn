@@ -1,0 +1,9 @@
+name=bt-cyc2
+version=1.0
+release=1
+summary="a dependency cycle"
+homepage=https://example.org/bt-cyc2
+license=(MIT)
+category=extra
+build_type=meta
+depends=(bt-cyc1)

@@ -1,0 +1,20 @@
+#!/bin/sh
+# A hand-written configure: just enough of the autoconf interface for burn's autotools type.
+srcdir=$(cd "$(dirname "$0")" && pwd)
+prefix=/usr/local bindir='' greeting=hello
+for a; do
+	echo "configure: $a"
+	case $a in
+		--prefix=*) prefix=${a#*=} ;;
+		--bindir=*) bindir=${a#*=} ;;
+		--with-greeting=*) greeting=${a#*=} ;;
+	esac
+done
+: "${bindir:=$prefix/bin}"
+{
+	echo "srcdir = $srcdir"
+	echo "bindir = $bindir"
+	echo "GREETING = $greeting"
+	cat "$srcdir/Makefile.in"
+} >Makefile
+echo "configure: wrote Makefile in $(basename "$PWD")"

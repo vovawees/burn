@@ -1,0 +1,26 @@
+name=bt-opts
+version=0.1
+release=1
+summary="options: !prune !strip staticlibs emptydirs !lto"
+homepage=https://example.org/bt-opts
+license=(MIT)
+category=extra
+build_type=custom
+options=('!prune' '!strip' staticlibs emptydirs '!lto')
+
+do_build() {
+	echo "CFLAGS=$CFLAGS"
+	echo "LDFLAGS=$LDFLAGS"
+	printf 'int main(void) { return 0; }\n' >t.c
+	$CC $CFLAGS $LDFLAGS -o t t.c
+}
+
+do_install() {
+	install -Dm755 t "$DESTDIR/usr/bin/bt-opts"
+	install -Dm644 /dev/null "$DESTDIR/usr/lib/libo.a"
+	install -Dm755 t "$DESTDIR/usr/lib/libo.so"
+	install -Dm644 /dev/null "$DESTDIR/usr/lib/libo.la"
+	install -Dm644 /dev/null "$DESTDIR/usr/share/doc/bt-opts/README"
+	install -Dm644 /dev/null "$DESTDIR/usr/share/locale/de/LC_MESSAGES/o.mo"
+	mkdir -p "$DESTDIR/usr/share/bt-opts/empty"
+}

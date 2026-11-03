@@ -1,0 +1,16 @@
+all: bt-auto
+
+bt-auto: $(srcdir)/main.c
+	$(CC) $(CFLAGS) -DGREETING='"$(GREETING)"' $(LDFLAGS) -o $@ $(srcdir)/main.c
+
+check: bt-auto
+	./bt-auto | grep '$(GREETING)'
+
+install: bt-auto
+	install -Dm755 bt-auto $(DESTDIR)$(bindir)/bt-auto
+	install -Dm644 $(srcdir)/bt-auto.1 $(DESTDIR)/usr/share/man/man1/bt-auto.1
+	install -Dm644 $(srcdir)/bt-auto.de.1 $(DESTDIR)/usr/share/man/de/man1/bt-auto.1
+	install -Dm644 $(srcdir)/README $(DESTDIR)/usr/share/doc/bt-auto/README
+	$(if $(INSTALL_EXTRA),install -Dm644 $(srcdir)/README $(DESTDIR)/usr/share/bt-auto/README)
+
+.PHONY: all check install

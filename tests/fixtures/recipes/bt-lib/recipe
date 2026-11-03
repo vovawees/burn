@@ -1,0 +1,21 @@
+name=bt-lib
+version=1.0
+release=1
+summary="a shared library (its soname goes up in 2.0)"
+homepage=https://example.org/bt-lib
+license=(MIT)
+category=extra
+build_type=custom
+source=(btlib.c)
+sha256=(SKIP)
+sover=1
+
+do_build() {
+	$CC $CFLAGS -fPIC -shared -Wl,-soname,libbtlib.so.$sover $LDFLAGS -o libbtlib.so.$sover "$FILES/btlib.c"
+}
+
+do_install() {
+	install -Dm755 libbtlib.so.$sover "$DESTDIR/usr/lib/libbtlib.so.$sover"
+	ln -s libbtlib.so.$sover "$DESTDIR/usr/lib/libbtlib.so"
+	echo 'int btlib(void);' | install -Dm644 /dev/stdin "$DESTDIR/usr/include/btlib.h"
+}

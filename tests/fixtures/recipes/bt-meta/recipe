@@ -1,0 +1,9 @@
+name=bt-meta
+version=1
+release=1
+summary="meta build type: only dependencies"
+homepage=https://example.org/bt-meta
+license=(MIT)
+category=extra
+build_type=meta
+depends=(bt-app)

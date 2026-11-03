@@ -1,0 +1,9 @@
+--- lib.c
++++ lib.c
+@@ -2,5 +2,5 @@
+ 
+ const char *btm_name(void)
+ {
+-	return "world";
++	return "fixed world";
+ }

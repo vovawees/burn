@@ -1,0 +1,8 @@
+name=bt-badtype
+version=1.0
+release=1
+summary="an unknown build type"
+homepage=https://example.org/bt-badtype
+license=(MIT)
+category=extra
+build_type=frobnicate

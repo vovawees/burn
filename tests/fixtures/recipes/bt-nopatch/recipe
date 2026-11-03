@@ -1,0 +1,13 @@
+name=bt-nopatch
+version=1.0
+release=1
+summary="a patch that is not there"
+homepage=https://example.org/bt-nopatch
+license=(MIT)
+category=extra
+build_type=custom
+patches=(missing.patch)
+
+do_install() {
+	:
+}

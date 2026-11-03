@@ -1,0 +1,10 @@
+--- a/main.c
++++ b/main.c
+@@ -2,6 +2,6 @@
+ 
+ int main(void)
+ {
+-	puts(GREETING ", world");
++	puts(GREETING ", patched world");
+ 	return 0;
+ }

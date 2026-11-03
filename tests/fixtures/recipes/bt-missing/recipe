@@ -1,0 +1,13 @@
+name=bt-missing
+version=1.0
+release=1
+summary="a dependency without a recipe"
+homepage=https://example.org/bt-missing
+license=(MIT)
+category=extra
+build_type=custom
+depends=(nosuchdep)
+
+do_install() {
+	install -Dm644 /dev/null "$DESTDIR/usr/share/bt-missing/here"
+}

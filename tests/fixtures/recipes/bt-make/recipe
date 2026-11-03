@@ -1,0 +1,20 @@
+name=bt-make
+version=1.0
+release=1
+summary="make build type: a zip, a -p0 patch, a shared library, LTO objects"
+homepage=https://example.org/bt-make
+license=(MIT)
+category=extra
+build_type=make
+source=(bt-make-$version.zip)
+sha256=(SKIP)
+patches=(fix.patch)
+patch_strip=0
+make_args=(GREETING=make)
+make_install_args=(INSTALL_LIBTOOL=1)
+
+do_build() {
+	make_args+=(LDLIBS=-lm)
+	bt_build
+	echo "built in ${PWD##*/}: ${make_args[*]}"
+}

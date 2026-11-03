@@ -1,0 +1,13 @@
+name=bt-nosrcdir
+version=1.0
+release=1
+summary="srcdir that does not exist"
+homepage=https://example.org/bt-nosrcdir
+license=(MIT)
+category=extra
+build_type=custom
+srcdir=nope
+
+do_install() {
+	:
+}

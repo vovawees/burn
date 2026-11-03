@@ -7,7 +7,8 @@
 #   PROFILES    CleanLinux/profiles
 # Every command runs with both on the same staging root (each version keeps its own copy, moved
 # into place for its run); stdout, stderr, the exit status and the root afterwards must be
-# identical. Used while the C version replaces the prototype.
+# identical, and so must the package cache (packages byte for byte, build logs). Used while the
+# C version replaces the prototype.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 abs() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd)" "$(basename "$1")"); }
@@ -49,6 +50,10 @@ printf 'zstd\ngood\n' >"$root/etc/burn/hold"
 	printf '2026-01-04T03:04:05Z|remove|lz4|1.10.0-2|-|'
 } >"$root/var/lib/burn/state/history"
 cp -r "$here/fixtures/recipes" "$tmp/fixtures"
+sh "$here/mksources.sh" "$here/fixtures/src" "$tmp/fixtures"
+# meson and cmake may come from pip (~/.local), and HOME changes below
+PYTHONUSERBASE=${PYTHONUSERBASE:-$HOME/.local}
+export PYTHONUSERBASE
 printf 'binary\0data' >"$tmp/fixtures/broken-Name/blob.bin"
 head -c 300000 /dev/zero | tr '\0' a >"$tmp/fixtures/broken-Name/big.txt"
 
@@ -287,6 +292,55 @@ list=$tmp/commands
 	# shellcheck disable=SC2016
 	printf '%s\n' '@ printf "name=fetchw\nversion=1\nsource=(notes.txt)\n" >"$ROOT/r/fetchw/recipe"'
 	echo "-R $root/r --write checksum fetchw"
+	# builds: every build type, finalize, the packages and logs in the cache
+	echo "build"
+	echo "build nosuchrecipe"
+	echo "build bt-custom"
+	echo "build bt-custom"
+	echo "--rebuild build bt-custom"
+	echo "-f -tls build bt-custom"
+	echo "build bt-opts"
+	echo "--check build bt-auto"
+	echo "build bt-areconf"
+	echo "build bt-noconf"
+	echo "build bt-make"
+	echo "build bt-cmake"
+	echo "build bt-meson"
+	echo "build bt-meta bt-opts"
+	echo "build bt-fail"
+	echo "-v build bt-fail"
+	echo "build bt-badtype"
+	echo "build bt-nopatch"
+	echo "build bt-badpatch"
+	echo "build bt-nosrcdir"
+	echo "build bt-cargo"
+	echo "build fetchme"
+	echo "build fetchbad bt-opts"
+	# sources ready for hacking
+	echo "unpack"
+	echo "unpack a b c"
+	echo "unpack nosuchrecipe"
+	echo "unpack bt-auto"
+	echo "unpack bt-auto $root/src/bt-auto"
+	echo "unpack bt-custom $root/src/custom"
+	echo "unpack bt-nosrcdir"
+	echo "unpack bt-badpatch $root/src/badpatch"
+	# install from recipes: dependencies first, up to date, ABI rebuilds
+	echo "install bt-app"
+	echo "-y install bt-app"
+	echo "-y install bt-app"
+	echo "files bt-app"
+	echo "-y install bt-meta"
+	echo "-y install bt-missing"
+	echo "--nodeps -y install bt-missing"
+	echo "-y install bt-cyc1"
+	echo "list"
+	echo "@ sed -i 's/^version=1.0/version=2.0/; s/^sover=1/sover=2/' $tmp/fixtures/bt-lib/recipe && touch -d @1700000000 $tmp/fixtures/bt-lib/recipe"
+	echo "-y install bt-lib"
+	echo "files bt-lib"
+	echo "doctor"
+	echo "history"
+	echo "-y remove bt-meta bt-app bt-lib bt-missing"
 	for v in name version release summary homepage license category source sha256 build_type srcdir \
 		depends makedepends features patches patch_strip options backup noextract configure_args \
 		meson_args cmake_args make_args make_install_args cargo_args out_of_tree meson_subdir \
@@ -333,15 +387,24 @@ snapshot() {
 	)
 }
 
+# A build log, or its tail in a failure message: the version and the date in its first line
+# differ, and so do the times cmake reports.
+normalize_log() {
+	sed 's/^# burn [^ :]*: \(.*\), [^,]*$/# burn: \1, DATE/; s/^\(-- [A-Za-z]* done\) ([0-9.]*s)$/\1/' "$@"
+}
+
 # The cache as text: every path with its type (but the temporary work directory), the contents
-# of downloaded sources.
+# of downloaded sources and of build logs, the checksum of packages.
 snapshot_cache() {
 	(
 		cd "$1" || exit 1
 		find . -path ./work -prune -o -printf '%p %y\n' | LC_ALL=C sort
-		find ./sources -type f 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
+		find ./sources ./logs -type f 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
 			echo "== $f"
-			cat "$f"
+			normalize_log "$f"
+		done
+		find ./packages -type f 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
+			echo "== $f $(sha256sum <"$f")"
 		done
 	)
 }
@@ -389,8 +452,10 @@ while IFS= read -r line; do
 		rm -rf "$tmp/got.cache"
 		cp -a "$tmp/want.cache" "$tmp/got.cache"
 	fi
+	# build logs in stderr: see normalize_log;
 	# lint: the prototype reports file problems in directory order, burn in C sorts them;
 	# history: the dates of today's transactions depend on when each version ran
+	for f in want got; do normalize_log "$tmp/$f.err" >"$tmp/$f.tmp" && mv "$tmp/$f.tmp" "$tmp/$f.err"; done
 	case $line in
 		lint*) for f in want got; do sort "$tmp/$f.out" -o "$tmp/$f.out"; done ;;
 		history* | *" history"*)

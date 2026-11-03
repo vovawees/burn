@@ -1,0 +1,8 @@
+prefix = @prefix@
+datadir = @datadir@
+
+all:
+	echo "@PACKAGE_NAME@ @PACKAGE_VERSION@" >version.txt
+
+install: all
+	install -Dm644 version.txt $(DESTDIR)$(datadir)/bt-areconf/version.txt

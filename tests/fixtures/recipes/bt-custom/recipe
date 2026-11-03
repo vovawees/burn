@@ -1,0 +1,67 @@
+name=bt-custom
+version=1.0
+release=2
+summary="custom build type: the recipe's do_* functions, then finalize"
+homepage=https://example.org/bt-custom
+license=(MIT GPL-2.0-only)
+category=extra
+build_type=custom
+features=(+tls -docs)
+depends=(zstd 'good:tls' 'nosuch:docs')
+source=(notes.txt data.tar.gz)
+sha256=(SKIP SKIP)
+noextract=(data.tar.gz)
+backup=(etc/bt-custom.conf)
+cflags_append="-DBT_CUSTOM"
+
+do_prepare() {
+	echo "prepare in ${PWD##*/}: $(ls "$FILES")"
+	printf 'prepared\n' >"$BUILD/prepared"
+}
+
+do_build() {
+	cat >hello.c <<'C'
+#include <stdio.h>
+int main(void) { puts("hello"); return 0; }
+C
+	echo "CFLAGS=$CFLAGS"
+	echo "MAKEFLAGS=$MAKEFLAGS SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:+set}"
+	echo "tls=${FEAT[tls]} docs=${FEAT[docs]}"
+	$CC $CFLAGS $LDFLAGS -o hello hello.c
+}
+
+do_install() {
+	local d=$DESTDIR
+	install -Dm755 hello "$d/bin/bt-hello"
+	ln "$d/bin/bt-hello" "$d/bin/bt-hello2"
+	ln -s bt-hello "$d/bin/bt-hi"
+	install -Dm755 hello "$d/sbin/bt-admin"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/sbin/bt-tool"
+	install -Dm644 "$FILES/notes.txt" "$d/lib64/bt/notes.txt"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/lib64/bt/more.txt"
+	install -Dm644 "$FILES/data.tar.gz" "$d/usr/share/bt-custom/data.tar.gz"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/share/bt-custom/with space.txt"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/share/doc/bt-custom/README"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/share/gtk-doc/html/bt/index.html"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/share/info/bt.info"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/share/man/man1/bt-hello.1"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/share/man/de/man1/bt-hello.1"
+	install -Dm644 "$FILES/notes.txt" "$d/usr/share/man/en_GB/man1/bt-hello.1"
+	local l
+	for l in de en en_US en@quot en.UTF-8 fr english; do
+		install -Dm644 "$FILES/notes.txt" "$d/usr/share/locale/$l/LC_MESSAGES/bt.mo"
+	done
+	install -Dm644 /dev/null "$d/usr/lib/libbt.la"
+	install -Dm644 /dev/null "$d/usr/lib/libbt.a"
+	install -Dm755 hello "$d/usr/lib/libbt.so"
+	install -Dm644 /dev/null "$d/usr/lib/libonly.a"
+	mkdir -p "$d/usr/share/empty/deeper" "$d/var/lib/bt-custom"
+	echo "conf=1" | install -Dm600 /dev/stdin "$d/etc/bt-custom.conf"
+	chmod 4755 "$d/bin/bt-hello"
+}
+
+post_install() {
+	echo "post_install in ${PWD##*/}"
+	cat "$BUILD/prepared"
+	touch "$DESTDIR/usr/share/bt-custom/post"
+}

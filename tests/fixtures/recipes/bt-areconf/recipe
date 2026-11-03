@@ -1,0 +1,10 @@
+name=bt-areconf
+version=1.0
+release=1
+summary="autotools build type: configure.ac only (autoreconf), in tree"
+homepage=https://example.org/bt-areconf
+license=(MIT)
+category=extra
+build_type=autotools
+source=(bt-areconf-$version.tar.gz)
+sha256=(SKIP)

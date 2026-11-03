@@ -1,0 +1,9 @@
+name=bt-cargo
+version=1.0
+release=1
+summary="cargo build type without Cargo.lock"
+homepage=https://example.org/bt-cargo
+license=(MIT)
+category=extra
+build_type=cargo
+cargo_args=(--features x)

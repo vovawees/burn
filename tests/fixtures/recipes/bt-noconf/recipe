@@ -1,0 +1,10 @@
+name=bt-noconf
+version=1.0
+release=1
+summary="autotools build type without configure"
+homepage=https://example.org/bt-noconf
+license=(MIT)
+category=extra
+build_type=autotools
+source=(bt-noconf-$version.tar.gz)
+sha256=(SKIP)

@@ -1,0 +1,15 @@
+name=bt-badpatch
+version=1.0
+release=1
+summary="a patch that does not apply"
+homepage=https://example.org/bt-badpatch
+license=(MIT)
+category=extra
+build_type=custom
+source=(bad.patch)
+sha256=(SKIP)
+patches=(bad.patch)
+
+do_install() {
+	:
+}

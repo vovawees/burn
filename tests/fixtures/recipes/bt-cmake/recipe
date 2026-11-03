@@ -1,0 +1,21 @@
+name=bt-cmake
+version=1.0
+release=1
+summary="cmake build type: cmake_subdir, cmake_args, cmake_extra"
+homepage=https://example.org/bt-cmake
+license=(MIT)
+category=extra
+build_type=cmake
+source=(bt-cmake-$version.tar.gz)
+sha256=(SKIP)
+cmake_subdir=sub
+cmake_args=(-DBT_FOO=ON)
+
+cmake_extra() {
+	echo "-DBT_BAR=bar baz"
+}
+
+do_install() {
+	bt_install
+	echo "installed from ${PWD##*/}"
+}

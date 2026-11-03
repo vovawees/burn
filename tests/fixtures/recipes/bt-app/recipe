@@ -1,0 +1,19 @@
+name=bt-app
+version=1.0
+release=1
+summary="a program linked against bt-lib"
+homepage=https://example.org/bt-app
+license=(MIT)
+category=extra
+build_type=custom
+depends=(bt-lib)
+source=(btapp.c)
+sha256=(SKIP)
+
+do_build() {
+	$CC $CFLAGS $LDFLAGS -o btapp "$FILES/btapp.c" -lbtlib
+}
+
+do_install() {
+	install -Dm755 btapp "$DESTDIR/usr/bin/btapp"
+}

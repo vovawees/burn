@@ -1,0 +1,19 @@
+name=bt-fail
+version=1.0
+release=1
+summary="a build that fails"
+homepage=https://example.org/bt-fail
+license=(MIT)
+category=extra
+build_type=custom
+
+do_build() {
+	local i
+	for i in $(seq 1 45); do echo "line $i"; done
+	echo "error: something went wrong" >&2
+	return 3
+}
+
+do_install() {
+	:
+}

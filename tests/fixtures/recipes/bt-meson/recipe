@@ -1,0 +1,21 @@
+name=bt-meson
+version=1.0
+release=1
+summary="meson build type: meson_subdir, meson_args, meson_extra"
+homepage=https://example.org/bt-meson
+license=(MIT)
+category=extra
+build_type=meson
+source=(bt-meson-$version.tar.gz)
+sha256=(SKIP)
+meson_subdir=sub
+meson_args=(-Dfoo=true)
+
+meson_extra() {
+	echo "-Dc_std=c11"
+}
+
+do_build() {
+	JOBS=1 bt_build
+	echo "built in ${PWD##*/}"
+}
