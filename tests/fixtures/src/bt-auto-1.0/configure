@@ -18,3 +18,5 @@ done
 	cat "$srcdir/Makefile.in"
 } >Makefile
 echo "configure: wrote Makefile in $(basename "$PWD")"
+# the shell's pwd: the logical path of the build directory, as burn gave it (symlinks kept)
+echo "configure: pwd $(pwd)"

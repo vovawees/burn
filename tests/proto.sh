@@ -13,8 +13,12 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 abs() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd)" "$(basename "$1")"); }
 c=$(abs "$1") proto=$(abs "$2") recipes=$(cd "$3" && pwd) profiles=$(cd "$4" && pwd)
-tmp=$(mktemp -d)
-[ -n "${PROTO_KEEP-}" ] || trap 'rm -rf "$tmp"' EXIT
+# everything through a symlink: the programs a build runs see the paths as given (configure's
+# in-tree test compares `pwd` with `cd $srcdir && pwd`)
+real=$(mktemp -d)
+tmp=$real.l
+ln -s "$real" "$tmp"
+[ -n "${PROTO_KEEP-}" ] || trap 'rm -rf "$real" "$tmp"' EXIT
 root=$tmp/root
 mkdir -p "$root/etc/burn" "$root/var/lib/burn/installed/zstd" "$root/var/lib/burn/installed/good"
 cat >"$root/etc/burn/burn.conf" <<'CONF'

@@ -72,13 +72,18 @@ static int exec_in(const bt_ctx *b, svec *argv, svec *env)
 	return run(sv_argv(argv), &o);
 }
 
-/* cd DIR like the shell: a message and status 1 when it fails */
-static bool cd(const char *dir)
+/* cd DIR like the shell: PWD of the programs becomes the logical path; a message and status 1
+ * when it fails */
+static bool cd(const bt_ctx *b, const char *dir)
 {
-	if (chdir(dir) == 0)
-		return true;
-	fprintf(stderr, "burn: cd: %s: %s\n", dir, strerror(errno));
-	return false;
+	if (chdir(dir) != 0) {
+		fprintf(stderr, "burn: cd: %s: %s\n", dir, strerror(errno));
+		return false;
+	}
+	char *pwd = path_logical(dir, env_get(b->env, "PWD"));
+	env_set(b->env, "PWD", pwd);
+	free(pwd);
+	return true;
 }
 
 static int cmdv(const bt_ctx *b, svec *env, const char *first, ...) __attribute__((sentinel));
@@ -127,7 +132,7 @@ static int autotools(bt_ctx *b, const char *phase)
 				return rc;
 			}
 		}
-		if (!cd(bt_dir(b))) {
+		if (!cd(b, bt_dir(b))) {
 			free(conf);
 			return 1;
 		}
@@ -146,7 +151,7 @@ static int autotools(bt_ctx *b, const char *phase)
 		push_list(b, &argv, "configure_args");
 		b->extra(b, "configure_extra", &argv);
 	} else {
-		if (!cd(bt_dir(b)))
+		if (!cd(b, bt_dir(b)))
 			return 1;
 		sv_push(&argv, "make");
 		if (!strcmp(phase, "install")) {
@@ -169,7 +174,7 @@ static int autotools(bt_ctx *b, const char *phase)
 
 static int make(bt_ctx *b, const char *phase)
 {
-	if (!cd(V(b, "SRC")))
+	if (!cd(b, V(b, "SRC")))
 		return 1;
 	svec argv = SVEC_INIT;
 	sv_push(&argv, "make");
@@ -401,14 +406,16 @@ static int cargo(bt_ctx *b, const char *phase)
 		sv_free(&vars);
 		return 0;
 	}
-	sv_extend(&env, b->env);
+	if (!cd(b, V(b, "SRC"))) {
+		sv_free(&vars);
+		return 1;
+	}
+	sv_extend(&env, b->env); /* after the cd: its PWD */
 	for (size_t i = 0; i < vars.n; i++) {
 		char *k = xstrndup(vars.v[i], strcspn(vars.v[i], "="));
 		env_set(&env, k, vars.v[i] + strlen(k) + 1);
 		free(k);
 	}
-	if (!cd(V(b, "SRC")))
-		return 1;
 	sv_push(&argv, "cargo");
 	if (!strcmp(phase, "prepare")) {
 		if (!is_file("Cargo.lock"))
@@ -451,7 +458,7 @@ static int python(bt_ctx *b, const char *phase)
 	if (!strcmp(phase, "build")) {
 		if (on(b, "CROSS"))
 			die("%s: cross builds of Python packages are not supported yet", V(b, "name"));
-		if (!cd(V(b, "SRC")))
+		if (!cd(b, V(b, "SRC")))
 			return 1;
 		if (py_has(b, "import build, installer"))
 			return cmdv(b, NULL, "python3", "-m", "build", "--wheel", "--no-isolation", "--outdir", bdir,
@@ -460,7 +467,7 @@ static int python(bt_ctx *b, const char *phase)
 			    bdir, ".", (char *)NULL);
 	}
 	if (!strcmp(phase, "check")) {
-		if (!cd(V(b, "SRC")))
+		if (!cd(b, V(b, "SRC")))
 			return 1;
 		return cmdv(b, NULL, "python3", "-m", "pytest", (char *)NULL);
 	}

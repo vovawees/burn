@@ -47,6 +47,11 @@ static void child_setup(const run_opts *o, int pipe_w)
 		close(null);
 	if (o->envp)
 		environ = o->envp; /* execvp searches the PATH of the new environment */
+	if (o->cwd) { /* (cd DIR && PROG): PWD is the logical path */
+		char *pwd = path_logical(o->cwd, getenv("PWD"));
+		setenv("PWD", pwd, 1);
+		free(pwd);
+	}
 }
 
 static NORETURN void child(char *const argv[], int (*fn)(void *), void *arg, const run_opts *o, int pipe_w)

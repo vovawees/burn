@@ -97,6 +97,7 @@ bool str_uint(const char *s);              /* one or more digits */
 char *path_join(const char *a, const char *b); /* "$a/$b" with single slashes; a may be "" */
 char *path_abs(const char *p);                 /* readlink -m */
 char *path_real(const char *p);                /* readlink -f; NULL if it does not exist */
+char *path_logical(const char *dir, const char *oldpwd); /* $PWD after cd DIR (bash) */
 const char *path_base(const char *p);
 char *path_dir(const char *p);
 

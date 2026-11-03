@@ -599,6 +599,51 @@ char *path_abs(const char *p)
 	return sb_steal(&out);
 }
 
+/* the PWD of bash's `cd DIR` once chdir(DIR) worked: DIR made absolute against the logical OLDPWD
+ * and canonicalized without resolving symlinks (/a/./b//c/.. is /a/b), the physical getcwd() when
+ * that is not the directory we are in. Programs then see the directory by the name the
+ * configuration gave it: configure's in-tree test compares `pwd` with `cd $srcdir && pwd`. */
+char *path_logical(const char *dir, const char *oldpwd)
+{
+	char *in = NULL;
+	if (*dir == '/')
+		in = xstrdup(dir);
+	else if (oldpwd && *oldpwd == '/')
+		in = xasprintf("%s/%s", oldpwd, dir);
+	if (in) {
+		sbuf out = SBUF_INIT;
+		sb_str(&out);
+		for (const char *r = in; *r;) {
+			while (*r == '/')
+				r++;
+			if (!*r)
+				break;
+			const char *e = strchr(r, '/');
+			size_t n = e ? (size_t)(e - r) : strlen(r);
+			if (n == 2 && r[0] == '.' && r[1] == '.') {
+				char *slash = strrchr(out.s, '/');
+				out.len = slash ? (size_t)(slash - out.s) : 0;
+				out.s[out.len] = 0;
+			} else if (!(n == 1 && r[0] == '.')) {
+				sb_addc(&out, '/');
+				sb_addn(&out, r, n);
+			}
+			r += n;
+		}
+		free(in);
+		if (!out.len)
+			sb_addc(&out, '/');
+		struct stat a, b;
+		if (stat(out.s, &a) == 0 && stat(".", &b) == 0 && a.st_dev == b.st_dev && a.st_ino == b.st_ino)
+			return sb_steal(&out);
+		sb_free(&out);
+	}
+	char *cwd = getcwd(NULL, 0);
+	if (!cwd)
+		die_errno("getcwd");
+	return cwd;
+}
+
 char *path_real(const char *p)
 {
 	char *r = realpath(p, NULL);

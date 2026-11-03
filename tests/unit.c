@@ -144,6 +144,27 @@ static void test_paths(void)
 	char *real = path_real(d);
 	char *want_real = xasprintf("%s/a/b/x/y", real ? real : d);
 	CHECK(!strcmp(abs, want) || !strcmp(abs, want_real));
+	/* $PWD after cd: symlinks kept, . and .. and // folded, the physical path when it lies */
+	char *back = getcwd(NULL, 0), *via = xasprintf("%s/l/c", d);
+	CHECK(back && chdir(via) == 0);
+	char *dirty = xasprintf("%s//l/./c/", d), *pl = path_logical(dirty, NULL);
+	CHECK(!strcmp(pl, via));
+	free(pl);
+	pl = path_logical("../c", via);
+	CHECK(!strcmp(pl, via));
+	free(pl);
+	char *phys = xasprintf("%s/a/b/c", real ? real : d);
+	pl = path_logical("c", "/nonexistent");
+	CHECK(!strcmp(pl, phys));
+	free(pl);
+	pl = path_logical("c", NULL);
+	CHECK(!strcmp(pl, phys));
+	free(pl);
+	CHECK(back && chdir(back) == 0);
+	free(back);
+	free(via);
+	free(dirty);
+	free(phys);
 	char *f = xasprintf("%s/a/file", d);
 	CHECK(file_write(f, "one\ntwo\n", 8, 0644) == 0);
 	svec lines = SVEC_INIT;
