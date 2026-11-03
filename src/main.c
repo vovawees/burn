@@ -28,6 +28,7 @@ static void usage(FILE *f)
 	      "  owner <path>                show which package owns a file\n"
 	      "  plan                        show what 'update' would do (changes nothing)\n"
 	      "  update                      sync, build every update, snapshot, apply, fix ABI breaks\n"
+	      "  snapshot                    read-only btrfs snapshot of the root (update makes one)\n"
 	      "  hold|unhold [pkg]...        pin packages (update skips them); no args: list holds\n"
 	      "  history                     show the transaction log\n"
 	      "  rollback <pkg>              reinstall the previous build of a package and hold it\n"
@@ -71,6 +72,7 @@ static const command commands[] = {
 	{"install", cmd_install}, {"remove", cmd_remove}, {"uninstall", cmd_remove}, {"rollback", cmd_rollback},
 	{"fetch", cmd_fetch},   {"checksum", cmd_checksum}, {"build", cmd_build},   {"unpack", cmd_unpack},
 	{"sync", cmd_sync},     {"plan", cmd_plan},       {"update", cmd_update}, {"upgrade", cmd_update},
+	{"snapshot", cmd_snapshot},
 };
 
 static bool takes_value(const char *a)

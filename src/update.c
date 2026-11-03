@@ -411,7 +411,8 @@ int cmd_update(int argc, char **argv)
 	prefetch(&order);
 	for (size_t i = 0; i < order.n; i++)
 		sv_push_own(&files, build_pkg(order.v[i]));
-	/* 2) the rollback point (a btrfs snapshot hook, say) */
+	/* 2) the rollback point: a btrfs snapshot, then the pre-update hooks */
+	snapshot_take(false);
 	run_hooks("pre-update");
 	/* 3) apply */
 	for (size_t i = 0; i < files.n; i++)

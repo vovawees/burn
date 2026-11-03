@@ -197,4 +197,8 @@ int cmd_sync(int argc, char **argv);
 int cmd_plan(int argc, char **argv);
 int cmd_update(int argc, char **argv);
 
+/* ---- snapshot.c ---- */
+void snapshot_take(bool required); /* the btrfs snapshot of ROOT before an update */
+int cmd_snapshot(int argc, char **argv);
+
 #endif
