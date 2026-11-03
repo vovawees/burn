@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "../src/sha256.h"
+#include "../src/shparse.h"
 #include "../src/util.h"
 #include "../src/vercmp.h"
 
@@ -146,12 +147,114 @@ static void test_paths(void)
 	free(f);
 }
 
+static int eval(shctx *c, const char *src)
+{
+	return sh_eval(c, src, strlen(src), "t");
+}
+
+static int inherit_cb(shctx *c, svec *argv)
+{
+	if (strcmp(argv->v[0], "inherit"))
+		return 1;
+	if (argv->n != 2)
+		return sh_error(c, "usage: inherit PROFILE");
+	sv_push((svec *)c->user, argv->v[1]);
+	return 0;
+}
+
+static void test_shparse(void)
+{
+	/* layers: a recipe is evaluated on top of the configuration */
+	shenv base, env;
+	sh_init(&base, NULL, false);
+	sh_set(&base, "CARCH", "x86_64");
+	svec l = SVEC_INIT;
+	sv_push(&l, "a");
+	sv_push(&l, "b");
+	sh_set_list(&base, "PROFILE_FEATURES", &l);
+	sv_free(&l);
+	sh_init(&env, &base, false);
+	shctx c;
+	sh_ctx_init(&c, &env);
+	CHECK(eval(&c, "x=$CARCH-${PROFILE_FEATURES[1]}\nPROFILE_FEATURES+=(c)\nunset CARCH\n") == 0);
+	CHECK_STR(sh_get(&env, "x"), "x86_64-b");
+	CHECK(sh_get(&env, "CARCH") == NULL && !sh_isset(&env, "CARCH"));
+	CHECK_STR(sh_get(&base, "CARCH"), "x86_64");
+	svec got = SVEC_INIT;
+	CHECK(sh_get_list(&env, "PROFILE_FEATURES", &got));
+	char *j = sv_join(&got, " ");
+	CHECK_STR(j, "a b c");
+	free(j);
+	sv_clear(&got);
+	sh_get_list(&base, "PROFILE_FEATURES", &got);
+	CHECK(got.n == 2);
+	sv_clear(&got);
+	CHECK(eval(&c, "CARCH=aarch64; export LATER; LATER=1; unset -v x") == 0);
+	CHECK_STR(sh_get(&env, "CARCH"), "aarch64");
+	CHECK(sh_find(&env, "LATER") && sh_find(&env, "LATER")->exported);
+	CHECK(!sh_isset(&env, "x"));
+	sh_local_names(&env, &got);
+	j = sv_join(&got, " ");
+	CHECK_STR(j, "CARCH LATER PROFILE_FEATURES");
+	free(j);
+	sv_clear(&got);
+
+	/* functions and the command hook */
+	svec inherited = SVEC_INIT;
+	c.command = inherit_cb;
+	c.user = &inherited;
+	CHECK(eval(&c, "inherit generic\nf() { :; }\ng() {\n\tf\n}\nf() { true; }\nunset -f g\n") == 0);
+	CHECK(inherited.n == 1 && !strcmp(inherited.v[0], "generic"));
+	CHECK(c.funcs.n == 1 && !strcmp(c.funcs.v[0], "f"));
+	CHECK(eval(&c, "inherit") < 0);
+	CHECK_STR(c.err, "t:1: usage: inherit PROFILE");
+	sv_free(&inherited);
+	sh_ctx_free(&c);
+
+	/* errors carry file:line, the first one wins */
+	sh_ctx_init(&c, &env);
+	CHECK(eval(&c, "a=1\n\nb=(x\n y $(date))\nc=`x`") < 0);
+	CHECK_STR(c.err, "t:4: command substitution $(...) is not allowed at the top level: put it into a function");
+	CHECK(eval(&c, "c=`x`") < 0);
+	CHECK(strstr(c.err, "t:4:") != NULL);
+	sh_ctx_free(&c);
+	sh_ctx_init(&c, &env);
+	CHECK(sh_eval_file(&c, "/nonexistent/recipe") < 0);
+	CHECK_STR(c.err, "/nonexistent/recipe: cannot read");
+	sh_ctx_free(&c);
+
+	/* single words, $'\u...' */
+	sh_ctx_init(&c, &env);
+	char *w = NULL;
+	CHECK(eval(&c, "version=1.2.3 u=$'\\u00e9\\U0001F600\\x41'") == 0);
+	CHECK(sh_expand_word(&c, "${version%.*}-\"$CARCH\"", &w) == 0);
+	CHECK_STR(w, "1.2-aarch64");
+	free(w);
+	CHECK_STR(sh_get(&env, "u"), "\xc3\xa9\xf0\x9f\x98\x80" "A");
+	CHECK(sh_expand_word(&c, "$nope", &w) < 0);
+	free(w);
+	sh_ctx_free(&c);
+
+	sbuf b = SBUF_INIT;
+	sh_quote(&b, "it's");
+	sb_addc(&b, ' ');
+	sh_quote(&b, "plain-1.0/x");
+	sb_addc(&b, ' ');
+	sh_quote(&b, "");
+	CHECK_STR(sb_str(&b), "'it'\\''s' plain-1.0/x ''");
+	sb_free(&b);
+	sv_free(&got);
+	sh_free(&env);
+	sh_free(&base);
+}
+
 int main(void)
 {
 	test_sha256();
 	test_vercmp();
 	test_strings();
 	test_paths();
+	test_shparse();
 	printf("unit: %d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

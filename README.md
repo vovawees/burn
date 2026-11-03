@@ -24,7 +24,7 @@
 
 ```sh
 make
-make check
+make check               # RECIPES=../CleanLinux-Recipes/packages: ещё и сверка всех рецептов с bash
 sudo make install        # PREFIX=/usr DESTDIR=
 ```
 
@@ -35,7 +35,8 @@ sudo make install        # PREFIX=/usr DESTDIR=
 | Часть | Команды | Статус |
 |---|---|---|
 | основа: вывод, строки, файлы, процессы, SHA-256, сравнение версий | `vercmp` | ✅ |
-| язык рецептов | `info`, `query`, `search`, `lint` | ⏳ |
+| парсер языка рецептов (сверка с bash на всех рецептах) | — | ✅ |
+| рецепты, особенности, зависимости | `info`, `query`, `search`, `lint` | ⏳ |
 | конфиг, профили, флаги компилятора | `profile` | ⏳ |
 | база пакетов | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` | ⏳ |
 | пакеты: tar + zstd, атомарная установка, удаление, триггеры | `install <файл>`, `remove` | ⏳ |

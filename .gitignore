@@ -1,4 +1,5 @@
 /burn
 /tests/unit
+/tests/shdump
 *.o
 /build/

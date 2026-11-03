@@ -16,8 +16,10 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libzstd-dev zstd
       - name: build (warnings are errors)
         run: make CC=${{ matrix.cc }} WERROR=1
-      - name: test
-        run: make CC=${{ matrix.cc }} check
+      - name: recipes
+        run: git clone -q --depth 1 https://github.com/vovawees/CleanLinux-Recipes.git ../CleanLinux-Recipes
+      - name: test (and every recipe against bash)
+        run: make CC=${{ matrix.cc }} check RECIPES=../CleanLinux-Recipes/packages
 
   sanitizers:
     runs-on: ubuntu-latest
@@ -25,5 +27,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: dependencies
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libzstd-dev zstd
+      - name: recipes
+        run: git clone -q --depth 1 https://github.com/vovawees/CleanLinux-Recipes.git ../CleanLinux-Recipes
       - name: test with ASan + UBSan
-        run: make CFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer" LDFLAGS="-fsanitize=address,undefined" check
+        run: >-
+          make CFLAGS="-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer"
+          LDFLAGS="-fsanitize=address,undefined" check RECIPES=../CleanLinux-Recipes/packages

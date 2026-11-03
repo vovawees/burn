@@ -1,0 +1,20 @@
+# field splitting of unquoted expansions in array elements
+empty=
+sp="  lead  and   trail  "
+a=($TESTSPACE)
+b=(x$TESTSPACE)
+c=("$TESTSPACE")
+d=($empty)
+e=("$empty")
+f=(${unset_var:-a b})
+g=("${unset_var:-a b}")
+h=($sp)
+i=(pre${sp}post)
+j=("$sp")
+k=($empty$empty)
+l=("$empty$empty" "")
+m=(x"$empty"y $empty"")
+n=(${sp// /:})
+o=a\ b
+p=($o)
+q=${sp}

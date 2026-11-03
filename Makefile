@@ -32,17 +32,19 @@ burn: $(OBJ)
 src/%.o: src/%.c $(HDR)
 	$(CC) $(CPPFLAGS) $(BURN_CFLAGS) $(CFLAGS) -c -o $@ $<
 
-tests/unit: tests/unit.c $(LIBOBJ) $(HDR)
-	$(CC) $(CPPFLAGS) $(BURN_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ tests/unit.c $(LIBOBJ) $(LDLIBS)
+tests/%: tests/%.c $(LIBOBJ) $(HDR)
+	$(CC) $(CPPFLAGS) $(BURN_CFLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIBOBJ) $(LDLIBS)
 
-check: burn tests/unit
+# RECIPES=../CleanLinux-Recipes/packages also compares every recipe with bash
+check: burn tests/unit tests/shdump
 	./tests/unit
+	sh tests/shcompat.sh tests/shdump $(RECIPES)
 	sh tests/cli.sh ./burn
 
 install: burn
 	install -Dm755 burn $(DESTDIR)$(BINDIR)/burn
 
 clean:
-	rm -f burn tests/unit src/*.o
+	rm -f burn tests/unit tests/shdump src/*.o
 
 .PHONY: all check install clean
