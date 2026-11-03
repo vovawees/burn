@@ -6,10 +6,13 @@
 #   make proto           compare with the bash prototype: PROTO= RECIPES= PROFILES=
 #   make check-btrfs     snapshots on a real btrfs (loop device; KERNEL=bzImage: in qemu)
 #   make install         DESTDIR= PREFIX=/usr
+#   make dist            burn-VERSION.tar.gz from git HEAD
 #   make WERROR=1        warnings are errors (CI)
 
 PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
+DATADIR ?= $(PREFIX)/share
+VERSION := $(shell sed -n 's/^\#define BURN_VERSION "\(.*\)"/\1/p' src/util.h)
 
 CC ?= cc
 CFLAGS ?= -O2 -pipe
@@ -64,8 +67,13 @@ check-btrfs: burn
 
 install: burn
 	install -Dm755 burn $(DESTDIR)$(BINDIR)/burn
+	install -Dm644 burn.conf $(DESTDIR)$(DATADIR)/burn/burn.conf.example
+
+# the release tarball: the same bytes for the same commit
+dist:
+	git archive --format=tar --prefix=burn-$(VERSION)/ HEAD | gzip -n -9 >burn-$(VERSION).tar.gz
 
 clean:
 	rm -f burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan src/*.o src/prelude.inc
 
-.PHONY: all check check-btrfs proto install clean
+.PHONY: all check check-btrfs proto install dist clean

@@ -7,3 +7,4 @@
 *.o
 /build/
 /src/prelude.inc
+/burn-*.tar.gz
