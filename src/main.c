@@ -70,10 +70,8 @@ static const command commands[] = {
 	{"hold", cmd_hold},     {"unhold", cmd_unhold},   {"history", cmd_history}, {"doctor", cmd_doctor},
 	{"install", cmd_install}, {"remove", cmd_remove}, {"uninstall", cmd_remove}, {"rollback", cmd_rollback},
 	{"fetch", cmd_fetch},   {"checksum", cmd_checksum}, {"build", cmd_build},   {"unpack", cmd_unpack},
+	{"sync", cmd_sync},     {"plan", cmd_plan},       {"update", cmd_update}, {"upgrade", cmd_update},
 };
-
-/* commands of the bash prototype that are not ported yet */
-static const char *const pending[] = {"sync", "plan", "update", "upgrade", NULL};
 
 static bool takes_value(const char *a)
 {
@@ -252,10 +250,6 @@ int main(int argc, char **argv)
 	for (size_t i = 0; rc < 0 && i < ARRAY_LEN(commands); i++)
 		if (!strcmp(cmd, commands[i].name))
 			rc = commands[i].fn((int)args.n - 1, args.v + 1);
-	for (const char *const *p = pending; rc < 0 && *p; p++)
-		if (!strcmp(cmd, *p))
-			die("'%s' is not in burn %s yet: use the bash prototype (CleanLinux/burn/burn) meanwhile", cmd,
-			    BURN_VERSION);
 	if (rc < 0)
 		die("unknown command: %s (see: burn --help)", cmd);
 	fflush(stdout);

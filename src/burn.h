@@ -190,5 +190,11 @@ int cmd_doctor(int argc, char **argv);
 int cmd_install(int argc, char **argv);
 int cmd_remove(int argc, char **argv);
 int cmd_rollback(int argc, char **argv);
+void abi_followup(void); /* rebuild the packages linked against sonames this command took away */
+
+/* ---- update.c ---- */
+int cmd_sync(int argc, char **argv);
+int cmd_plan(int argc, char **argv);
+int cmd_update(int argc, char **argv);
 
 #endif

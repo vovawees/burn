@@ -21,7 +21,7 @@ static void build_install(const svec *names, const char *op)
 
 /* Packages linked against sonames that upgrades took away are rebuilt (the preserved old
  * libraries kept them working meanwhile). */
-static void abi_followup(void)
+void abi_followup(void)
 {
 	if (!txn_lost.n)
 		return;
