@@ -1,0 +1,14 @@
+name=fetchme
+version=1.0
+release=1
+summary="Sources from a mirror and from the recipe directory"
+homepage=https://example.org/fetchme
+license=(MIT)
+category=extra
+build_type=custom
+source=(gnu://fetchme/fetchme-$version.txt notes.txt renamed.txt::gnu://fetchme/fetchme-$version.txt)
+sha256=(
+	920036cf7afe3227e028562af93cd4c8be055794da11373062bcb8c2706650cd
+	SKIP
+	920036cf7afe3227e028562af93cd4c8be055794da11373062bcb8c2706650cd
+)

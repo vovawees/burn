@@ -1,0 +1,10 @@
+name=fetchbad
+version=1.0
+release=1
+summary="A source whose sha256 does not match"
+homepage=https://example.org/fetchbad
+license=(MIT)
+category=extra
+build_type=custom
+source=(bad.txt::gnu://fetchme/fetchme-$version.txt)
+sha256=(0000000000000000000000000000000000000000000000000000000000000000)

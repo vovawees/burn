@@ -107,6 +107,21 @@ if command -v zstd >/dev/null && tar --version 2>/dev/null | grep -q GNU; then
 	grep -q 'junk.pkg.tar.zst: truncated archive' "$tmp/err" || fail "junk message: $(cat "$tmp/err")"
 	if b install "$pkgs/missing.pkg.tar.zst" 2>/dev/null; then fail "missing file must fail"; fi
 fi
+# sources: parallel downloads from a mirror, sha256 inside burn
+if command -v curl >/dev/null || command -v wget >/dev/null; then
+	mkdir -p "$tmp/mirror/fetchme"
+	printf 'fetchme 1.0\n' >"$tmp/mirror/fetchme/fetchme-1.0.txt"
+	printf 'GNU_MIRROR=file://%s/mirror\nFETCH_JOBS=4\n' "$tmp" >"$tmp/fetch.conf"
+	f() { BURN_CACHE="$tmp/cache" b -c "$tmp/fetch.conf" "$@"; }
+	f fetch fetchme 2>"$tmp/err" || fail "fetch: $(cat "$tmp/err")"
+	grep -q 'sources: 2 downloaded and verified' "$tmp/err" || fail "fetch message"
+	[ "$(cat "$tmp/cache/sources/renamed.txt")" = "fetchme 1.0" ] || fail "fetch: name::url"
+	if f fetch fetchme fetchbad fetchnosum 2>"$tmp/err"; then fail "bad sources must fail"; fi
+	grep -q 'fetchnosum: missing sha256 for nosum.txt' "$tmp/err" || fail "missing sha256 message"
+	grep -q '2 source(s) could not be fetched or verified' "$tmp/err" || fail "failure count"
+	[ -f "$tmp/cache/sources/bad.txt.bad" ] || fail "bad download moved aside"
+	[ "$(f checksum fetchme | sed -n 2p)" = "	920036cf7afe3227e028562af93cd4c8be055794da11373062bcb8c2706650cd" ] || fail "checksum"
+fi
 if [ "$(id -u)" != 0 ]; then
 	if env BURN_PROFILE_DIR="$tmp/profiles" "$BURN" -r / hold x 2>"$tmp/err"; then fail "/ needs root"; fi
 	grep -q 'run it as root' "$tmp/err" || fail "root message"

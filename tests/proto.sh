@@ -19,7 +19,12 @@ mkdir -p "$root/etc/burn" "$root/var/lib/burn/installed/zstd" "$root/var/lib/bur
 cat >"$root/etc/burn/burn.conf" <<'CONF'
 FEATURES="-doc x11"
 LOCALES="en"
+FETCH_JOBS=1
 CONF
+# gnu:// sources come from a local mirror
+mkdir -p "$tmp/mirror/fetchme"
+printf 'fetchme 1.0\n' >"$tmp/mirror/fetchme/fetchme-1.0.txt"
+printf 'GNU_MIRROR=file://%s\n' "$tmp/mirror" >>"$root/etc/burn/burn.conf"
 printf '# per package\nbash -nls\ngood -tls +docs # comment\n' >"$root/etc/burn/package.features"
 db=$root/var/lib/burn/installed
 printf 'name=zstd\nversion=1.5.7\nrelease=1\nprofile=native\nfeatures=+lz4\n' >"$db/zstd/meta"
@@ -257,6 +262,31 @@ list=$tmp/commands
 	echo "doctor"
 	echo "-y remove foo"
 	echo "history"
+	# sources: the mirror (file://), the recipe directory, the cache
+	echo "fetch"
+	echo "fetch nosuchrecipe"
+	echo "fetch fetchme"
+	echo "fetch fetchme fetchme"
+	echo "fetch fetchbad"
+	echo "fetch fetchdead"
+	echo "fetch fetchnosum"
+	echo "fetch fetchme fetchbad fetchnosum"
+	echo "fetch fetchlocal"
+	echo "checksum"
+	echo "checksum fetchme fetchbad"
+	echo "checksum fetchme"
+	echo "checksum fetchbad"
+	echo "checksum fetchlocal"
+	echo "checksum fetchdead"
+	echo "checksum nosuchrecipe"
+	# shellcheck disable=SC2016 # expanded by the "@" runner
+	printf '%s\n' '@ mkdir -p "$ROOT/r/fetchw" && cp '"$here"'/fixtures/recipes/fetchme/notes.txt "$ROOT/r/fetchw/" && sed "s/^name=fetchme/name=fetchw/; s/^\t9200.*/\tSKIP/" '"$here"'/fixtures/recipes/fetchme/recipe >"$ROOT/r/fetchw/recipe"'
+	echo "-R $root/r checksum fetchw"
+	echo "-R $root/r --write checksum fetchw"
+	echo "-R $root/r query fetchw sha256"
+	# shellcheck disable=SC2016
+	printf '%s\n' '@ printf "name=fetchw\nversion=1\nsource=(notes.txt)\n" >"$ROOT/r/fetchw/recipe"'
+	echo "-R $root/r --write checksum fetchw"
 	for v in name version release summary homepage license category source sha256 build_type srcdir \
 		depends makedepends features patches patch_strip options backup noextract configure_args \
 		meson_args cmake_args make_args make_install_args cargo_args out_of_tree meson_subdir \
@@ -277,12 +307,14 @@ run_one() { # TOOL want|got ARGS...
 	tool=$1 out=$tmp/$2
 	shift 2
 	mv "$out.root" "$root"
+	mv "$out.cache" "$tmp/cache"
 	set +e
 	env BURN_PROFILE_DIR="$profiles" BURN_CACHE="$tmp/cache" HOME="$tmp" NO_COLOR=1 LC_ALL=C \
 		"$tool" -r "$root" -R "$recipes" -R "$tmp/fixtures" "$@" >"$out.out" 2>"$out.err" </dev/null
 	echo "exit $?" >>"$out.err"
 	set -e
 	mv "$root" "$out.root"
+	mv "$tmp/cache" "$out.cache"
 }
 
 # The root as text: every path with its type and mode, and for anything but a directory the
@@ -301,8 +333,23 @@ snapshot() {
 	)
 }
 
+# The cache as text: every path with its type (but the temporary work directory), the contents
+# of downloaded sources.
+snapshot_cache() {
+	(
+		cd "$1" || exit 1
+		find . -path ./work -prune -o -printf '%p %y\n' | LC_ALL=C sort
+		find ./sources -type f 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
+			echo "== $f"
+			cat "$f"
+		done
+	)
+}
+
 cp -a "$root" "$tmp/want.root"
 mv "$root" "$tmp/got.root"
+cp -a "$tmp/cache" "$tmp/want.cache"
+mv "$tmp/cache" "$tmp/got.cache"
 n=0 fail=0
 while IFS= read -r line; do
 	n=$((n + 1))
@@ -310,8 +357,10 @@ while IFS= read -r line; do
 		"@ "*)
 			for s in want got; do
 				mv "$tmp/$s.root" "$root"
-				ROOT=$root sh -c "${line#@ }"
+				mv "$tmp/$s.cache" "$tmp/cache"
+				ROOT=$root CACHE=$tmp/cache sh -c "${line#@ }"
 				mv "$root" "$tmp/$s.root"
+				mv "$tmp/cache" "$tmp/$s.cache"
 			done
 			continue
 			;;
@@ -330,6 +379,15 @@ while IFS= read -r line; do
 		diff -u "$tmp/want.tree" "$tmp/got.tree" | sed '1,2d; s/^/    /' | head -n 30
 		rm -rf "$tmp/got.root"
 		cp -a "$tmp/want.root" "$tmp/got.root"
+	fi
+	snapshot_cache "$tmp/want.cache" >"$tmp/want.ctree"
+	snapshot_cache "$tmp/got.cache" >"$tmp/got.ctree"
+	if ! cmp -s "$tmp/want.ctree" "$tmp/got.ctree"; then
+		fail=$((fail + 1))
+		echo "FAIL (cache): burn $line   (- prototype, + C)"
+		diff -u "$tmp/want.ctree" "$tmp/got.ctree" | sed '1,2d; s/^/    /' | head -n 30
+		rm -rf "$tmp/got.cache"
+		cp -a "$tmp/want.cache" "$tmp/got.cache"
 	fi
 	# lint: the prototype reports file problems in directory order, burn in C sorts them;
 	# history: the dates of today's transactions depend on when each version ran

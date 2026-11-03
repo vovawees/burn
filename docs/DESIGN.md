@@ -28,6 +28,7 @@
 | `src/tar.c` | потоковое чтение zstd и tar (ustar, GNU, pax), проверка путей |
 | `src/root.c` | операции с файлами строго внутри корня (`openat2` + `RESOLVE_IN_ROOT`, кэш каталогов) |
 | `src/pkg.c` | установка и удаление пакетов, сохранённые библиотеки, триггеры, запись в базу |
+| `src/source.c` | источники: кэш, загрузка (`curl`/`wget`, по `FETCH_JOBS` сразу), проверка sha256, `fetch`, `checksum` |
 | `src/cmd_recipe.c` | `search`, `info`, `query`, `lint` |
 | `src/cmd_db.c` | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` |
 | `src/cmd_pkg.c` | `install <файл>`, `remove`, `rollback` |

@@ -1,0 +1,9 @@
+name=fetchnosum
+version=1.0
+release=1
+summary="A source without sha256"
+homepage=https://example.org/fetchnosum
+license=(MIT)
+category=extra
+build_type=custom
+source=(nosum.txt::gnu://fetchme/fetchme-$version.txt)

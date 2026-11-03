@@ -1,0 +1,10 @@
+name=fetchdead
+version=1.0
+release=1
+summary="A source that cannot be downloaded"
+homepage=https://example.org/fetchdead
+license=(MIT)
+category=extra
+build_type=custom
+source=(file:///nonexistent/burn-test/fetchdead-$version.tar.gz)
+sha256=(SKIP)

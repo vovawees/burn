@@ -1,0 +1,10 @@
+name=fetchlocal
+version=1.0
+release=1
+summary="A local source that is missing"
+homepage=https://example.org/fetchlocal
+license=(MIT)
+category=extra
+build_type=custom
+source=(missing.txt)
+sha256=(SKIP)

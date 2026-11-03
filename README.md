@@ -41,7 +41,8 @@ sudo make install        # PREFIX=/usr DESTDIR=
 | конфиг, профили, цель и CPU, определение железа | `profile` | ✅ |
 | база пакетов | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` | ✅ |
 | пакеты: tar + zstd в процессе, атомарная установка, удаление, откат, сохранённые библиотеки, триггеры | `install <файл>`, `remove`, `rollback` | ✅ |
-| сборка, флаги пакета | `fetch`, `unpack`, `build`, `install <рецепт>`, `checksum` | ⏳ |
+| источники: параллельная загрузка, sha256 внутри процесса | `fetch`, `checksum` | ✅ |
+| сборка, флаги пакета | `unpack`, `build`, `install <рецепт>` | ⏳ |
 | rolling+++ | `sync`, `plan`, `update` | ⏳ |
 
 Пока команды из ⏳ не готовы, их делает bash-прототип: C-версия и прототип работают с одной и той же базой

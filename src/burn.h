@@ -113,6 +113,13 @@ void preserved_cleanup(void); /* delete preserved libraries nothing needs any mo
 void history_add(const char *op, const char *name, const char *old, const char *new, const char *file);
 int root_run(const char *prog, char *const args[], bool quiet); /* $R/usr/bin/PROG, run here */
 
+/* ---- source.c ---- */
+char *source_path(const recipe *r, const char *spec); /* the recipe directory or the source cache */
+void fetch_sources(recipe *r, bool verify);          /* dies on a missing source or a bad sum */
+void prefetch(const svec *names);                    /* every remote source, FETCH_JOBS at a time */
+int cmd_fetch(int argc, char **argv);
+int cmd_checksum(int argc, char **argv);
+
 /* ---- cmd_recipe.c ---- */
 int cmd_search(int argc, char **argv);
 int cmd_info(int argc, char **argv);
