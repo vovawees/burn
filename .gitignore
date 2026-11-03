@@ -1,0 +1,4 @@
+/burn
+/tests/unit
+*.o
+/build/
