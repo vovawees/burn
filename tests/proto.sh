@@ -13,7 +13,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 abs() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd)" "$(basename "$1")"); }
 c=$(abs "$1") proto=$(abs "$2") recipes=$(cd "$3" && pwd) profiles=$(cd "$4" && pwd)
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+[ -n "${PROTO_KEEP-}" ] || trap 'rm -rf "$tmp"' EXIT
 root=$tmp/root
 mkdir -p "$root/etc/burn" "$root/var/lib/burn/installed/zstd" "$root/var/lib/burn/installed/good"
 cat >"$root/etc/burn/burn.conf" <<'CONF'
@@ -47,7 +47,94 @@ cp -r "$here/fixtures/recipes" "$tmp/fixtures"
 printf 'binary\0data' >"$tmp/fixtures/broken-Name/blob.bin"
 head -c 300000 /dev/zero | tr '\0' a >"$tmp/fixtures/broken-Name/big.txt"
 
-# one command per line: the arguments after "burn -r ROOT -R RECIPES -R FIXTURES"
+# packages, packed like burn packs them, in the package cache (rollback finds them there)
+pkgs=$tmp/cache/packages
+mkdir -p "$pkgs"
+mkpkg() { # NAME VERSION BUILDID: $tmp/dest becomes NAME-VERSION-1; DEPENDS BACKUP PROVIDES NEEDS
+	d=$tmp/dest
+	mkdir -p "$d/.BURN"
+	{
+		printf 'name=%s\nversion=%s\nrelease=1\narch=x86_64\nchost=x86_64-cleanlinux-linux-gnu\n' "$1" "$2"
+		printf 'buildid=%s\nrid=%s\nprofile=native\nsummary=test\nlicense=MIT\n' "$3" "$3"
+		printf 'depends=%s\nfeatures=\nbackup=%s\ncflags=-O2\nldflags=\n' "${DEPENDS-}" "${BACKUP-}"
+		printf 'builddate=2023-11-14T22:13:20Z\n'
+	} >"$d/.BURN/meta"
+	(cd "$d" && find . -mindepth 1 \( -path ./.BURN -prune \) -o \( -type d -printf '%P/\n' \) -o -printf '%P\n') |
+		LC_ALL=C sort >"$d/.BURN/files"
+	printf '%s' "${PROVIDES-}" >"$d/.BURN/provides-so"
+	printf '%s' "${NEEDS-}" >"$d/.BURN/needs-so"
+	(cd "$d" && LC_ALL=C tar --sort=name --numeric-owner --owner=0 --group=0 --mtime=@1700000000 \
+		--clamp-mtime -cf - .) | zstd -q >"$pkgs/$1-$2-1-x86_64-$3.pkg.tar.zst"
+	rm -rf "$d"
+}
+long=$(printf 'long%.0s' $(seq 1 40))
+hello_tree() { # VERSION
+	d=$tmp/dest
+	mkdir -p "$d/usr/bin" "$d/usr/lib" "$d/etc" "$d/usr/share/hello/empty" "$d/usr/share/hello/private"
+	printf 'hello %s\n' "$1" >"$d/usr/bin/hello"
+	chmod 755 "$d/usr/bin/hello"
+	ln "$d/usr/bin/hello" "$d/usr/bin/hello-hard"
+	ln -s hello "$d/usr/bin/hi"
+	printf 'conf %s\n' "$1" >"$d/etc/hello.conf"
+	printf 'lib %s\n' "$1" >"$d/usr/lib/libhello.so.1.$1"
+	ln -s "libhello.so.1.$1" "$d/usr/lib/libhello.so.1"
+	printf 'long\n' >"$d/usr/share/hello/$long.txt"
+	printf 'read only\n' >"$d/usr/share/hello/ro"
+	chmod 444 "$d/usr/share/hello/ro"
+	chmod 700 "$d/usr/share/hello/private"
+	printf 'suid\n' >"$d/usr/bin/hello-suid"
+	chmod 4755 "$d/usr/bin/hello-suid"
+	mkfifo "$d/usr/share/hello/fifo"
+	printf 'secret\n' >"$d/usr/share/hello/private/key"
+}
+hello_tree 0
+mkdir -p "$tmp/dest/usr/share/hello/old"
+printf 'old\n' >"$tmp/dest/usr/share/hello/old/file"
+printf 'old\n' >"$tmp/dest/usr/share/hello/old.txt"
+BACKUP=etc/hello.conf PROVIDES='libhello.so.1
+' NEEDS='libc.so.6
+' mkpkg hello 1.0 b1
+hello_tree 1
+printf 'new\n' >"$tmp/dest/usr/share/hello/new.txt"
+BACKUP=etc/hello.conf PROVIDES='libhello.so.1
+' NEEDS='libc.so.6
+' mkpkg hello 2.0 b2
+hello_tree 0
+BACKUP=etc/hello.conf PROVIDES='libhello.so.1
+' mkpkg hello 1.0 b1x
+mkdir -p "$tmp/dest/usr/bin"
+printf 'user\n' >"$tmp/dest/usr/bin/user"
+DEPENDS=hello NEEDS='libhello.so.1
+' mkpkg user 1.0 u1
+mkdir -p "$tmp/dest/usr/bin"
+printf 'clash\n' >"$tmp/dest/usr/bin/hello"
+printf 'clash\n' >"$tmp/dest/usr/bin/clash"
+mkpkg clash 1.0 c1
+mkdir -p "$tmp/dest/usr/bin"
+printf 'bash\n' >"$tmp/dest/usr/bin/bash"
+mkpkg bash 5.3 e1
+mkdir -p "$tmp/dest/usr/lib/modules/6.1.0-test/kernel"
+: >"$tmp/dest/usr/lib/modules/6.1.0-test/modules.order"
+: >"$tmp/dest/usr/lib/modules/6.1.0-test/kernel/dummy.ko"
+mkpkg kernel 6.1 k1
+printf 'not a package' >"$pkgs/junk-1-1-x86_64-x.pkg.tar.zst"
+# libfoo.so.1 moves to usr/lib/foo in 2.0: the old one stays preserved while app needs it
+mkdir -p "$tmp/dest/usr/lib"
+printf 'foo 1\n' >"$tmp/dest/usr/lib/libfoo.so.1.0"
+ln -s libfoo.so.1.0 "$tmp/dest/usr/lib/libfoo.so.1"
+PROVIDES='libfoo.so.1
+' mkpkg foo 1.0 f1
+mkdir -p "$tmp/dest/usr/lib/foo"
+printf 'foo 2\n' >"$tmp/dest/usr/lib/foo/libfoo.so.1"
+PROVIDES='libfoo.so.1
+' mkpkg foo 2.0 f2
+mkdir -p "$tmp/dest/usr/bin"
+printf 'app\n' >"$tmp/dest/usr/bin/app"
+DEPENDS=foo NEEDS='libfoo.so.1
+' mkpkg app 1.0 a1
+
+# one command per line: the arguments after "burn -r ROOT -R RECIPES -R FIXTURES";
+# "@ SHELL" runs SHELL on both roots ($ROOT) instead
 list=$tmp/commands
 {
 	echo "search"
@@ -112,6 +199,64 @@ list=$tmp/commands
 	echo "hold"
 	echo "-r $root/empty hold one"
 	echo "-r $root/empty hold"
+	# packages
+	h1=$pkgs/hello-1.0-1-x86_64-b1.pkg.tar.zst
+	h2=$pkgs/hello-2.0-1-x86_64-b2.pkg.tar.zst
+	echo "install"
+	echo "install /nonexistent/x.pkg.tar.zst"
+	echo "install $h1"
+	echo "list"
+	echo "files hello"
+	echo "owner /usr/bin/hi"
+	echo "install $h1"
+	echo "--force install $h1"
+	echo "install $pkgs/hello-1.0-1-x86_64-b1x.pkg.tar.zst"
+	echo "install $h1"
+	echo "install $pkgs/user-1.0-1-x86_64-u1.pkg.tar.zst"
+	echo "install $pkgs/clash-1.0-1-x86_64-c1.pkg.tar.zst"
+	# shellcheck disable=SC2016 # expanded by the "@" runner
+	printf '%s\n' '@ echo "my conf" >"$ROOT/etc/hello.conf" && touch -d @1600000000 "$ROOT/etc/hello.conf"'
+	echo "install $h2"
+	echo "history"
+	echo "doctor"
+	echo "rollback hello"
+	echo "rollback user"
+	echo "rollback nosuch"
+	echo "hold"
+	echo "unhold hello"
+	echo "install $h2"
+	echo "install $h1 $h2"
+	echo "remove"
+	echo "remove hello"
+	echo "-y remove nosuch"
+	echo "-y remove hello"
+	echo "-y remove hello user"
+	echo "list"
+	echo "install $pkgs/bash-5.3-1-x86_64-e1.pkg.tar.zst"
+	echo "-y remove bash"
+	echo "-y --force remove bash"
+	echo "install $pkgs/kernel-6.1-1-x86_64-k1.pkg.tar.zst"
+	echo "-y remove kernel"
+	echo "install $h2"
+	echo "--force install $pkgs/clash-1.0-1-x86_64-c1.pkg.tar.zst"
+	echo "-y uninstall clash"
+	# preserved libraries
+	f1=$pkgs/foo-1.0-1-x86_64-f1.pkg.tar.zst
+	f2=$pkgs/foo-2.0-1-x86_64-f2.pkg.tar.zst
+	echo "install $f1 $pkgs/app-1.0-1-x86_64-a1.pkg.tar.zst"
+	echo "install $f2"
+	echo "doctor"
+	echo "rollback foo"
+	echo "unhold foo"
+	echo "install $f2"
+	echo "-y --force remove foo"
+	echo "doctor"
+	echo "install $f1"
+	echo "install $f2"
+	echo "-y remove app"
+	echo "doctor"
+	echo "-y remove foo"
+	echo "history"
 	for v in name version release summary homepage license category source sha256 build_type srcdir \
 		depends makedepends features patches patch_strip options backup noextract configure_args \
 		meson_args cmake_args make_args make_install_args cargo_args out_of_tree meson_subdir \
@@ -140,14 +285,17 @@ run_one() { # TOOL want|got ARGS...
 	mv "$root" "$out.root"
 }
 
-# the root as text: every path with its type and mode, and the content of regular files
+# The root as text: every path with its type and mode, and for anything but a directory the
+# link count, the symlink target and the time (from the package, or "now"), then the content of
+# regular files (history dates as DATE).
 snapshot() {
 	(
 		cd "$1" || exit 1
-		find . -path ./var/lib/burn/lock -prune -o -printf '%p %y %m\n' | LC_ALL=C sort
+		find . -path ./var/lib/burn/lock -prune -o -type d -printf '%p d %m\n' -o -printf '%p %y %m %n %T@ %l\n' |
+			awk '$2 != "d" { split($5, t, "."); $5 = t[1] > 1700000000 ? "now" : t[1] } { print }' | LC_ALL=C sort
 		find . -type f ! -path ./var/lib/burn/lock | LC_ALL=C sort | while IFS= read -r f; do
 			echo "== $f"
-			cat "$f"
+			case $f in */history) sed 's/^[0-9-]*T[0-9:]*Z|/DATE|/' "$f" ;; *) cat "$f" ;; esac
 			echo
 		done
 	)
@@ -158,6 +306,16 @@ mv "$root" "$tmp/got.root"
 n=0 fail=0
 while IFS= read -r line; do
 	n=$((n + 1))
+	case $line in
+		"@ "*)
+			for s in want got; do
+				mv "$tmp/$s.root" "$root"
+				ROOT=$root sh -c "${line#@ }"
+				mv "$root" "$tmp/$s.root"
+			done
+			continue
+			;;
+	esac
 	# shellcheck disable=SC2086 # the command line is split into words on purpose
 	run_one "$proto" want $line
 	# shellcheck disable=SC2086
@@ -173,8 +331,15 @@ while IFS= read -r line; do
 		rm -rf "$tmp/got.root"
 		cp -a "$tmp/want.root" "$tmp/got.root"
 	fi
-	# lint: the prototype reports file problems in directory order, burn in C sorts them
-	case $line in lint*) for f in want got; do sort "$tmp/$f.out" -o "$tmp/$f.out"; done ;; esac
+	# lint: the prototype reports file problems in directory order, burn in C sorts them;
+	# history: the dates of today's transactions depend on when each version ran
+	case $line in
+		lint*) for f in want got; do sort "$tmp/$f.out" -o "$tmp/$f.out"; done ;;
+		history* | *" history"*)
+			today=$(date -u +%Y-%m-%d)
+			for f in want got; do sed "s/^${today}T[0-9:]*Z /DATE /" "$tmp/$f.out" >"$tmp/$f.tmp" && mv "$tmp/$f.tmp" "$tmp/$f.out"; done
+			;;
+	esac
 	for s in out err; do
 		if ! cmp -s "$tmp/want.$s" "$tmp/got.$s"; then
 			fail=$((fail + 1))

@@ -71,6 +71,18 @@ char **sv_argv(svec *v);
 void sv_clear(svec *v);
 void sv_free(svec *v);
 
+/* ---- string map: open addressing, keys are copied (a set when the values are unused) ---- */
+typedef struct {
+	char **keys;
+	size_t *vals;
+	size_t n, cap;
+} strmap;
+#define STRMAP_INIT {NULL, NULL, 0, 0}
+void sm_put(strmap *m, const char *key, size_t val); /* inserts or replaces */
+bool sm_get(const strmap *m, const char *key, size_t *val);
+bool sm_has(const strmap *m, const char *key);
+void sm_free(strmap *m);
+
 /* ---- strings ---- */
 bool str_prefix(const char *s, const char *prefix);
 bool str_suffix(const char *s, const char *suffix);
@@ -92,6 +104,8 @@ bool exists(const char *p); /* lstat: dangling links exist */
 bool is_exec(const char *p);
 int mkdir_p(const char *path, mode_t mode);
 int rm_rf(const char *path);
+/* entries of DIR matching the fnmatch PATTERN as DIR/NAME, sorted; dot files only for ".*" patterns */
+void glob_paths(const char *dir, const char *pattern, svec *out);
 char *file_read(const char *path, size_t *len); /* NUL terminated; NULL + errno on error */
 int file_write(const char *path, const void *data, size_t len, mode_t mode); /* atomic */
 int file_append(const char *path, const char *s);

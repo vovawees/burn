@@ -104,6 +104,15 @@ char *db_get(const char *name, const char *key);           /* NULL when missing 
 bool is_held(const char *name);
 void need_write(void); /* root for /, and the lock: dies when another burn works on ROOT */
 
+/* ---- pkg.c ---- */
+extern svec txn_lost; /* sonames that upgrades of this command took away (ABI follow-up) */
+void pkg_install_file(const char *file, const char *op); /* op: NULL (install/upgrade), "rollback" */
+void pkg_remove(const char *name);
+void triggers_run(void); /* ldconfig and depmod: once for the whole command */
+void preserved_cleanup(void); /* delete preserved libraries nothing needs any more */
+void history_add(const char *op, const char *name, const char *old, const char *new, const char *file);
+int root_run(const char *prog, char *const args[], bool quiet); /* $R/usr/bin/PROG, run here */
+
 /* ---- cmd_recipe.c ---- */
 int cmd_search(int argc, char **argv);
 int cmd_info(int argc, char **argv);
@@ -118,5 +127,10 @@ int cmd_hold(int argc, char **argv);
 int cmd_unhold(int argc, char **argv);
 int cmd_history(int argc, char **argv);
 int cmd_doctor(int argc, char **argv);
+
+/* ---- cmd_pkg.c ---- */
+int cmd_install(int argc, char **argv);
+int cmd_remove(int argc, char **argv);
+int cmd_rollback(int argc, char **argv);
 
 #endif

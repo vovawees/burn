@@ -40,9 +40,12 @@ sudo make install        # PREFIX=/usr DESTDIR=
 | рецепты, особенности, зависимости | `info`, `query`, `search`, `lint` | ✅ |
 | конфиг, профили, цель и CPU, определение железа | `profile` | ✅ |
 | база пакетов | `list`, `files`, `owner`, `hold`, `unhold`, `history`, `doctor` | ✅ |
-| пакеты: tar + zstd, атомарная установка, удаление, триггеры | `install <файл>`, `remove` | ⏳ |
-| сборка, флаги пакета | `fetch`, `unpack`, `build`, `install`, `checksum` | ⏳ |
-| rolling+++ | `sync`, `plan`, `update`, `rollback` | ⏳ |
+| пакеты: tar + zstd в процессе, атомарная установка, удаление, откат, сохранённые библиотеки, триггеры | `install <файл>`, `remove`, `rollback` | ✅ |
+| сборка, флаги пакета | `fetch`, `unpack`, `build`, `install <рецепт>`, `checksum` | ⏳ |
+| rolling+++ | `sync`, `plan`, `update` | ⏳ |
+
+Пока команды из ⏳ не готовы, их делает bash-прототип: C-версия и прототип работают с одной и той же базой
+и одним кэшем пакетов, так что их можно чередовать.
 
 Устройство, форматы и решения — в [docs/DESIGN.md](docs/DESIGN.md).
 

@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: MIT */
 #include "util.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fnmatch.h>
 #include <ftw.h>
 #include <limits.h>
 #include <sched.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -414,6 +417,76 @@ void sv_free(svec *v)
 	v->cap = 0;
 }
 
+/* ---- string map ---- */
+
+static uint64_t str_hash(const char *s)
+{
+	uint64_t h = 1469598103934665603ull; /* FNV-1a */
+	for (; *s; s++)
+		h = (h ^ (unsigned char)*s) * 1099511628211ull;
+	return h;
+}
+
+static size_t sm_slot(const strmap *m, const char *key)
+{
+	size_t i = (size_t)str_hash(key) & (m->cap - 1);
+	while (m->keys[i] && strcmp(m->keys[i], key))
+		i = (i + 1) & (m->cap - 1);
+	return i;
+}
+
+void sm_put(strmap *m, const char *key, size_t val)
+{
+	if ((m->n + 1) * 10 > m->cap * 7) {
+		strmap g = {NULL, NULL, 0, m->cap ? m->cap * 2 : 64};
+		g.keys = xcalloc(g.cap, sizeof *g.keys);
+		g.vals = xcalloc(g.cap, sizeof *g.vals);
+		for (size_t i = 0; i < m->cap; i++) {
+			if (m->keys[i]) {
+				size_t j = sm_slot(&g, m->keys[i]);
+				g.keys[j] = m->keys[i];
+				g.vals[j] = m->vals[i];
+				g.n++;
+			}
+		}
+		free(m->keys);
+		free(m->vals);
+		*m = g;
+	}
+	size_t i = sm_slot(m, key);
+	if (!m->keys[i]) {
+		m->keys[i] = xstrdup(key);
+		m->n++;
+	}
+	m->vals[i] = val;
+}
+
+bool sm_get(const strmap *m, const char *key, size_t *val)
+{
+	if (!m->cap)
+		return false;
+	size_t i = sm_slot(m, key);
+	if (!m->keys[i])
+		return false;
+	if (val)
+		*val = m->vals[i];
+	return true;
+}
+
+bool sm_has(const strmap *m, const char *key)
+{
+	return sm_get(m, key, NULL);
+}
+
+void sm_free(strmap *m)
+{
+	for (size_t i = 0; i < m->cap; i++)
+		free(m->keys[i]);
+	free(m->keys);
+	free(m->vals);
+	*m = (strmap)STRMAP_INIT;
+}
+
 /* ---- strings ---- */
 
 bool str_prefix(const char *s, const char *prefix)
@@ -607,6 +680,28 @@ static int rm_one(const char *p, const struct stat *st, int type, struct FTW *ft
 	if (r < 0 && errno != ENOENT)
 		return -1;
 	return 0;
+}
+
+void glob_paths(const char *dir, const char *pattern, svec *out)
+{
+	DIR *d = opendir(dir);
+	if (!d)
+		return;
+	svec names = SVEC_INIT;
+	struct dirent *e;
+	while ((e = readdir(d))) {
+		if (e->d_name[0] == '.' && pattern[0] != '.')
+			continue;
+		if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, ".."))
+			continue;
+		if (fnmatch(pattern, e->d_name, FNM_PERIOD) == 0)
+			sv_push(&names, e->d_name);
+	}
+	closedir(d);
+	sv_sort(&names);
+	for (size_t i = 0; i < names.n; i++)
+		sv_pushf(out, "%s/%s", dir, names.v[i]);
+	sv_free(&names);
 }
 
 int rm_rf(const char *path)

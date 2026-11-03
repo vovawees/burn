@@ -68,11 +68,12 @@ static const command commands[] = {
 	{"search", cmd_search}, {"info", cmd_info},       {"query", cmd_query},   {"lint", cmd_lint},
 	{"profile", cmd_profile}, {"list", cmd_list},     {"files", cmd_files},   {"owner", cmd_owner},
 	{"hold", cmd_hold},     {"unhold", cmd_unhold},   {"history", cmd_history}, {"doctor", cmd_doctor},
+	{"install", cmd_install}, {"remove", cmd_remove}, {"uninstall", cmd_remove}, {"rollback", cmd_rollback},
 };
 
 /* commands of the bash prototype that are not ported yet */
-static const char *const pending[] = {"sync",   "fetch",  "unpack",   "build",    "install",  "remove",
-				      "uninstall", "plan", "update", "upgrade", "rollback", "checksum", NULL};
+static const char *const pending[] = {"sync",   "fetch",  "unpack", "build",
+				      "plan",   "update", "upgrade", "checksum", NULL};
 
 static bool takes_value(const char *a)
 {

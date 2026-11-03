@@ -61,6 +61,52 @@ if command -v flock >/dev/null; then
 	fi
 	grep -q 'another burn process is working on' "$tmp/err" || fail "lock message"
 fi
+# packages (needs GNU tar and zstd to make them)
+if command -v zstd >/dev/null && tar --version 2>/dev/null | grep -q GNU; then
+	pkgs=$tmp/pkgs
+	mkdir -p "$pkgs"
+	mkpkg() { # NAME VERSION PROVIDES NEEDS DEPENDS: the tree in $tmp/dest
+		d=$tmp/dest
+		mkdir -p "$d/.BURN"
+		printf 'name=%s\nversion=%s\nrelease=1\narch=x86_64\nbuildid=b%s\ndepends=%s\n' "$1" "$2" "$2" "$5" >"$d/.BURN/meta"
+		(cd "$d" && find . -mindepth 1 \( -path ./.BURN -prune \) -o \( -type d -printf '%P/\n' \) -o -printf '%P\n') |
+			LC_ALL=C sort >"$d/.BURN/files"
+		printf '%s' "$3" >"$d/.BURN/provides-so"
+		printf '%s' "$4" >"$d/.BURN/needs-so"
+		(cd "$d" && LC_ALL=C tar --sort=name --numeric-owner --owner=0 --group=0 -cf - .) | zstd -q >"$pkgs/$1-$2.pkg.tar.zst"
+		rm -rf "$d"
+	}
+	mkdir -p "$tmp/dest/usr/lib" && echo 1 >"$tmp/dest/usr/lib/libfoo.so.1"
+	mkpkg libfoo 1 'libfoo.so.1
+' '' ''
+	mkdir -p "$tmp/dest/usr/lib" && echo 2 >"$tmp/dest/usr/lib/libfoo.so.2"
+	mkpkg libfoo 2 'libfoo.so.2
+' '' ''
+	mkdir -p "$tmp/dest/usr/bin" "$tmp/dest/etc" && echo app >"$tmp/dest/usr/bin/app" && echo conf >"$tmp/dest/etc/app.conf"
+	mkpkg app 1 '' 'libfoo.so.1
+' libfoo
+	b install "$pkgs/libfoo-1.pkg.tar.zst" "$pkgs/app-1.pkg.tar.zst" 2>/dev/null || fail "install files"
+	[ "$(cat "$tmp/root/usr/lib/libfoo.so.1")" = 1 ] || fail "install: contents"
+	# the upgrade drops a soname app still links against: the library stays until app is rebuilt
+	if b install "$pkgs/libfoo-2.pkg.tar.zst" 2>"$tmp/err"; then fail "ABI change must ask for a rebuild"; fi
+	grep -q 'preserving /usr/lib/libfoo.so.1: still needed' "$tmp/err" || fail "preserved library message"
+	grep -q 'ABI change (libfoo.so.1): rebuilding app' "$tmp/err" || fail "ABI change message"
+	[ -f "$tmp/root/usr/lib/libfoo.so.1" ] && [ -f "$tmp/root/usr/lib/libfoo.so.2" ] || fail "preserved library"
+	grep -qx 'usr/lib/libfoo.so.1' "$db/libfoo/preserved" || fail "preserved list"
+	b list | grep -q '^libfoo  *2-1$' || fail "upgraded"
+	if b remove libfoo -y 2>"$tmp/err"; then fail "remove: still required"; fi
+	grep -q 'libfoo is required by: app' "$tmp/err" || fail "required by message"
+	if b remove app 2>"$tmp/err" </dev/null; then fail "remove must ask"; fi
+	grep -q 'use --yes' "$tmp/err" || fail "confirmation message"
+	b -y remove libfoo app 2>/dev/null || fail "remove both"
+	[ ! -e "$tmp/root/usr/lib/libfoo.so.1" ] && [ ! -e "$tmp/root/usr/bin/app" ] || fail "remove: files"
+	b history | grep -q 'remove  *app' || fail "history: remove"
+	b -y rollback libfoo 2>/dev/null && fail "rollback: not installed"
+	printf 'not a package\n' | zstd -q >"$pkgs/junk.pkg.tar.zst"
+	if b install "$pkgs/junk.pkg.tar.zst" 2>"$tmp/err"; then fail "junk must fail"; fi
+	grep -q 'junk.pkg.tar.zst: truncated archive' "$tmp/err" || fail "junk message: $(cat "$tmp/err")"
+	if b install "$pkgs/missing.pkg.tar.zst" 2>/dev/null; then fail "missing file must fail"; fi
+fi
 if [ "$(id -u)" != 0 ]; then
 	if env BURN_PROFILE_DIR="$tmp/profiles" "$BURN" -r / hold x 2>"$tmp/err"; then fail "/ needs root"; fi
 	grep -q 'run it as root' "$tmp/err" || fail "root message"

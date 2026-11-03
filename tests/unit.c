@@ -97,6 +97,18 @@ static void test_strings(void)
 	CHECK(v.v[v.n] == NULL);
 	CHECK(sv_bsearch(&v, "a") && sv_bsearch(&v, "b") && sv_bsearch(&v, "c"));
 	CHECK(!sv_bsearch(&v, "") && !sv_bsearch(&v, "bb") && !sv_bsearch(&v, "d"));
+	strmap m = STRMAP_INIT;
+	for (size_t i = 0; i < 1000; i++) {
+		char *k = xasprintf("usr/lib/lib%zu.so", i);
+		sm_put(&m, k, i);
+		free(k);
+	}
+	sm_put(&m, "usr/lib/lib7.so", 70);
+	size_t val = 0;
+	CHECK(m.n == 1000 && sm_get(&m, "usr/lib/lib999.so", &val) && val == 999);
+	CHECK(sm_get(&m, "usr/lib/lib7.so", &val) && val == 70 && !sm_has(&m, "usr/lib/lib1000.so"));
+	sm_free(&m);
+	CHECK(!sm_has(&m, "x"));
 	sv_remove(&v, 1);
 	j = sv_join(&v, " ");
 	CHECK_STR(j, "a c");
