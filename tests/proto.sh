@@ -2,13 +2,13 @@
 # SPDX-License-Identifier: MIT
 # tests/proto.sh BURN PROTOTYPE RECIPES PROFILES: burn in C against the bash prototype.
 #   BURN        ./burn
-#   PROTOTYPE   CleanLinux/burn/burn
+#   PROTOTYPE   burn/burn of CleanLinux at the tag burn-prototype
 #   RECIPES     CleanLinux-Recipes/packages
-#   PROFILES    CleanLinux/profiles
+#   PROFILES    profiles of the same CleanLinux
 # Every command runs with both on the same staging root (each version keeps its own copy, moved
 # into place for its run); stdout, stderr, the exit status and the root afterwards must be
-# identical, and so must the package cache (packages byte for byte, build logs). Used while the
-# C version replaces the prototype.
+# identical, and so must the package cache (packages byte for byte, build logs). The prototype
+# is frozen; this keeps the C version from drifting where both should agree.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 abs() { (cd "$(dirname "$1")" && printf '%s/%s\n' "$(pwd)" "$(basename "$1")"); }

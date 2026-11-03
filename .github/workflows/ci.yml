@@ -44,7 +44,7 @@ jobs:
           autoconf cmake meson ninja-build patch unzip
       - name: prototype and recipes
         run: |
-          git clone -q --depth 1 https://github.com/vovawees/CleanLinux.git ../CleanLinux
+          git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/CleanLinux.git ../CleanLinux-prototype
           git clone -q --depth 1 https://github.com/vovawees/CleanLinux-Recipes.git ../CleanLinux-Recipes
       - name: every ported command against the bash prototype
         run: make WERROR=1 proto

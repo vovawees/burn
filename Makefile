@@ -55,9 +55,9 @@ check: burn tests/unit tests/shdump tests/tarls tests/tarw tests/elfscan
 	if command -v shellcheck >/dev/null; then shellcheck src/prelude.sh; fi
 
 # the C version against the bash prototype, command by command, on the same staging root
-PROTO ?= ../CleanLinux/burn/burn
+PROTO ?= ../CleanLinux-prototype/burn/burn
 RECIPES_DIR = $(or $(RECIPES),../CleanLinux-Recipes/packages)
-PROFILES ?= ../CleanLinux/profiles
+PROFILES ?= ../CleanLinux-prototype/profiles
 proto: burn
 	sh tests/proto.sh ./burn $(PROTO) $(RECIPES_DIR) $(PROFILES)
 
