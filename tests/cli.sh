@@ -547,7 +547,8 @@ if command -v openssl >/dev/null 2>&1; then
 		fail "binary cache: a bad signature must be refused: $(cat "$tmp/sg.log")"
 fi
 # meson cross builds: the host machine's sysroot and pkg-config dirs are in the cross file, the
-# environment of meson keeps the build machine's (PKG_CONFIG_PATH_FOR_BUILD, its default dirs)
+# environment of meson keeps the build machine's (PKG_CONFIG_PATH_FOR_BUILD, its default dirs);
+# what the cross compiler makes is not run here (needs_exe_wrapper)
 mx=$tmp/mx mxa=$(uname -m)
 mkdir -p "$mx/bin" "$mx/rec/mx" "$mx/out"
 for t in gcc g++ ld as ar nm ranlib strip objcopy objdump readelf; do
@@ -566,6 +567,7 @@ env PATH="$mx/bin:$PATH" MX_OUT="$mx/out" PKG_CONFIG_PATH_FOR_BUILD=/opt/native/
 [ -f "$mx/out/env" ] || fail "meson cross: setup did not run: $(cat "$mx/log")"
 grep -q "^sys_root = '$mx/root'" "$mx/out/cross.ini" || fail "meson cross: sys_root: $(cat "$mx/out/cross.ini")"
 grep -q "^pkg_config_libdir = '$mx/root/usr/lib/pkgconfig:" "$mx/out/cross.ini" || fail "meson cross: pkg_config_libdir"
+grep -q "^needs_exe_wrapper = true" "$mx/out/cross.ini" || fail "meson cross: needs_exe_wrapper"
 [ "$(cat "$mx/out/env")" = 'PKG_CONFIG_PATH_FOR_BUILD=/opt/native/lib/pkgconfig' ] ||
 	fail "meson cross: environment: $(cat "$mx/out/env")"
 # helpers of recipe functions still reach the running burn

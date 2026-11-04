@@ -284,8 +284,11 @@ static char *meson_cross_file(const bt_ctx *b)
 		meson_list(&s, V(b, opts[i][1]));
 		sb_addc(&s, '\n');
 	}
-	sb_addf(&s, "\n[properties]\nsys_root = '%s'\npkg_config_libdir = '%s'\n\n", V(b, "SYSROOT"),
-		V(b, "PKG_CONFIG_LIBDIR"));
+	/* needs_exe_wrapper: what the cross compiler makes is not run here, even for the same
+	 * architecture (it links against the sysroot's glibc, newer than the host's: DT_RELR), so
+	 * the checks of meson.build take their cross answers instead of failing to run */
+	sb_addf(&s, "\n[properties]\nsys_root = '%s'\npkg_config_libdir = '%s'\nneeds_exe_wrapper = true\n\n",
+		V(b, "SYSROOT"), V(b, "PKG_CONFIG_LIBDIR"));
 	sb_addf(&s, "[host_machine]\nsystem = 'linux'\ncpu_family = '%s'\ncpu = '%s'\nendian = 'little'\n",
 		str_prefix(carch, "arm") ? "arm" : carch, carch);
 	if (file_write(f, s.s, s.len, 0644) < 0)
