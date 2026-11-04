@@ -426,6 +426,27 @@ lt_recipes 1 1 && lt install lt-mod >"$tmp/lt.log" 2>&1 || fail "late: install: 
 lt_recipes 2 2 && lt --no-sync update >"$tmp/lt.log" 2>&1 || fail "late: update: $(cat "$tmp/lt.log")"
 grep -q 'Building against the updated system: lt-mod' "$tmp/lt.log" || fail "late: message: $(cat "$tmp/lt.log")"
 [ "$(cat "$tmp/ltroot/usr/share/lt/built-for")" = 2 ] || fail "late: update builds against the new kernel"
+# security=(…): the advisories an upgrade fixes; plan shows them, --security takes only such upgrades
+mkdir -p "$tmp/serec/se-a" "$tmp/serec/se-b"
+se_recipe() { # NAME VERSION [ADVISORIES]
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' "name=$1" "version=$2" 'release=1' 'summary="security"' 'homepage=https://example.org/se' \
+		'license=(MIT)' 'category=extra' 'build_type=custom' "security=(${3-})" 'do_install() {' \
+		'	mkdir -p "$DESTDIR/usr/share/$name"' '}' >"$tmp/serec/$1/recipe"
+}
+se() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/secache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$tmp/seroot" -R "$tmp/serec" -y "$@"; }
+se_recipe se-a 1 && se_recipe se-b 1 && se install se-a se-b >/dev/null 2>&1 || fail "security: install"
+se_recipe se-a 2 'CVE-2026-1234 GHSA-abcd-efgh-ijkl' && se_recipe se-b 2
+se plan 2>&1 | grep -q 'security: CVE-2026-1234 GHSA-abcd-efgh-ijkl' || fail "security: plan: $(se plan 2>&1)"
+se --security plan 2>&1 | grep -q '^  se-b ' && fail "security: plan --security shows only fixes"
+se --security --no-sync update >"$tmp/se.log" 2>&1 || fail "security: update: $(cat "$tmp/se.log")"
+se list | grep -q '^se-a  *2-1' && se list | grep -q '^se-b  *1-1' || fail "security: only the fix: $(se list)"
+se --security plan 2>&1 | grep -q 'No security updates' || fail "security: nothing left"
+se_recipe se-a 3 'OSV-2026-26'
+se lint se-a 2>&1 | grep -q "bad advisory" && fail "security: lint: PREFIX-ID is an advisory: $(se lint se-a 2>&1)"
+se_recipe se-a 3 'cve-2026-1'
+se lint se-a 2>&1 | grep -q "bad advisory 'cve-2026-1'" || fail "security: lint: $(se lint se-a 2>&1)"
 # signatures (Ed25519 through openssl) and the binary cache: a build of another machine is taken
 # only when a trusted key signed it; SIGNING_KEY signs every build
 if command -v openssl >/dev/null 2>&1; then

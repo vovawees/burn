@@ -127,6 +127,7 @@ int cmd_sync(int argc, char **argv)
 
 typedef struct {
 	char *name, *old, *avail, *reason, *risk; /* avail "-": will not be touched */
+	char *security;                           /* the advisories the new recipe fixes (security=) */
 } plan_entry;
 
 typedef struct {
@@ -140,7 +141,7 @@ static void plan_add(plan *p, const char *name, const char *old, const char *ava
 		p->cap = p->cap ? 2 * p->cap : 16;
 		p->e = xrealloc(p->e, p->cap * sizeof *p->e);
 	}
-	p->e[p->n++] = (plan_entry){xstrdup(name), xstrdup(old), xstrdup(avail), reason, xstrdup(risk)};
+	p->e[p->n++] = (plan_entry){xstrdup(name), xstrdup(old), xstrdup(avail), reason, xstrdup(risk), NULL};
 }
 
 static void plan_free(plan *p)
@@ -151,13 +152,15 @@ static void plan_free(plan *p)
 		free(p->e[i].avail);
 		free(p->e[i].reason);
 		free(p->e[i].risk);
+		free(p->e[i].security);
 	}
 	free(p->e);
 	*p = (plan){0};
 }
 
-/* "version-release" and the rid of the recipe NAME; false when it does not load */
-static bool recipe_state(const char *name, char **vr, char **rid)
+/* "version-release", the rid and the advisories (security=, "" when none) of the recipe NAME;
+ * false when it does not load */
+static bool recipe_state(const char *name, char **vr, char **rid, char **sec)
 {
 	char *err = NULL;
 	recipe *r = recipe_try_load(name, &err);
@@ -168,6 +171,12 @@ static bool recipe_state(const char *name, char **vr, char **rid)
 	features_resolve(r);
 	*vr = xasprintf("%s-%s", rget(r, "version"), rget(r, "release"));
 	*rid = recipe_rid(r);
+	if (sec) {
+		svec l = SVEC_INIT;
+		rlist(r, "security", &l);
+		*sec = sv_join(&l, " ");
+		sv_free(&l);
+	}
 	recipe_free(r);
 	return true;
 }
@@ -203,12 +212,12 @@ static void plan_compute(plan *p)
 		free(v);
 		free(rel);
 		char *path = recipe_path(n);
-		char *nw = NULL, *rid = NULL, *reason = NULL;
+		char *nw = NULL, *rid = NULL, *reason = NULL, *sec = NULL;
 		if (!path) {
 			plan_add(p, n, old, "-", xstrdup("no recipe any more (kept, orphan)"), "");
 			goto next;
 		}
-		if (!recipe_state(n, &nw, &rid)) {
+		if (!recipe_state(n, &nw, &rid, &sec)) {
 			plan_add(p, n, old, "-", xstrdup("recipe failed to load (skipped)"), "");
 			goto next;
 		}
@@ -243,8 +252,14 @@ static void plan_compute(plan *p)
 		if (risk.len)
 			risk.s[--risk.len] = 0;
 		plan_add(p, n, old, nw, reason, risk.s ? risk.s : "");
+		/* the advisories of an upgrade (a rebuild of the same version fixes nothing new) */
+		if (sec && *sec && strcmp(reason, "rebuild: recipe or features changed")) {
+			p->e[p->n - 1].security = sec;
+			sec = NULL;
+		}
 		sb_free(&risk);
 	next:
+		free(sec);
 		free(nw);
 		free(rid);
 		free(path);
@@ -255,7 +270,7 @@ static void plan_compute(plan *p)
 	spin_missing(&want, &why);
 	for (size_t i = 0; i < want.n; i++) {
 		char *nw = NULL, *rid = NULL;
-		if (!recipe_state(want.v[i], &nw, &rid)) {
+		if (!recipe_state(want.v[i], &nw, &rid, NULL)) {
 			plan_add(p, want.v[i], "-", "-", xasprintf("spin %s: no recipe (skipped)", why.v[i]), "");
 		} else {
 			plan_add(p, want.v[i], "-", nw, xasprintf("new: spin %s", why.v[i]), "");
@@ -318,10 +333,32 @@ static void plan_changelog(const plan *p)
 	sv_free(&dirs);
 }
 
+/* --security: only the upgrades that fix advisories (no rebuilds, no new spin packages); what
+ * they link against is rebuilt afterwards as always (ABI follow-up) */
+static void plan_security_only(plan *p)
+{
+	size_t k = 0;
+	for (size_t i = 0; i < p->n; i++) {
+		if (p->e[i].security && strcmp(p->e[i].avail, "-")) {
+			p->e[k++] = p->e[i];
+			continue;
+		}
+		plan_entry *e = &p->e[i];
+		free(e->name);
+		free(e->old);
+		free(e->avail);
+		free(e->reason);
+		free(e->risk);
+		free(e->security);
+	}
+	p->n = k;
+}
+
 static void plan_print(const plan *p)
 {
 	if (!p->n) {
-		msg("Nothing to do: installed packages match the recipes");
+		msg(B.security ? "No security updates: no newer recipe lists advisories (security=)"
+			       : "Nothing to do: installed packages match the recipes");
 		return;
 	}
 	msg("Update plan (%zu):", p->n);
@@ -329,6 +366,8 @@ static void plan_print(const plan *p)
 		const plan_entry *e = &p->e[i];
 		fprintf(stderr, "  %-22s %-14s -> %-14s %s%s%s%s\n", e->name, e->old, e->avail, e->reason,
 			*e->risk ? "  [" : "", e->risk, *e->risk ? "]" : "");
+		if (e->security)
+			fprintf(stderr, "  %-22s security: %s\n", "", e->security);
 	}
 	plan_changelog(p);
 }
@@ -339,6 +378,8 @@ int cmd_plan(int argc, char **argv)
 	(void)argv;
 	plan p = {0};
 	plan_compute(&p);
+	if (B.security)
+		plan_security_only(&p);
 	plan_print(&p);
 	plan_free(&p);
 	return 0;
@@ -411,6 +452,8 @@ int cmd_update(int argc, char **argv)
 		sync_repos();
 	plan p = {0};
 	plan_compute(&p);
+	if (B.security)
+		plan_security_only(&p);
 	plan_print(&p);
 	svec todo = SVEC_INIT, fresh = SVEC_INIT;
 	for (size_t i = 0; i < p.n; i++)

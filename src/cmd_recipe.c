@@ -233,6 +233,23 @@ static bool good_name(const char *s) /* ^[a-z0-9][a-z0-9+._-]*$ */
 	return ((*s >= 'a' && *s <= 'z') || (*s >= '0' && *s <= '9')) && all_chars(s + 1, "+._-", false);
 }
 
+/* an advisory id: PREFIX-ID, the prefix in capitals (CVE-2026-1234, GHSA-abcd-efgh-ijkl, OSV-…) */
+static bool good_advisory(const char *a)
+{
+	const char *p = a;
+	if (!(*p >= 'A' && *p <= 'Z'))
+		return false;
+	while ((*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9'))
+		p++;
+	if (*p++ != '-' || !*p)
+		return false;
+	for (; *p; p++)
+		if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '-' ||
+		      *p == '.' || *p == '_' || *p == ':'))
+			return false;
+	return true;
+}
+
 static bool good_feature(const char *s) /* ^[+-]?[a-z0-9][a-z0-9_-]*$ */
 {
 	if (*s == '+' || *s == '-')
@@ -411,6 +428,13 @@ static int lint_one(const char *target)
 	for (size_t i = 0; i < opts.n; i++)
 		if (!in_list(opts.v[i], RECIPE_OPTIONS))
 			sv_pushf(&e, "unknown option '%s'", opts.v[i]);
+	/* security=(CVE-2026-1234 GHSA-…): the advisories this version-release fixes */
+	svec adv = SVEC_INIT;
+	rlist(r, "security", &adv);
+	for (size_t i = 0; i < adv.n; i++)
+		if (!good_advisory(adv.v[i]))
+			sv_pushf(&e, "bad advisory '%s' in security (like CVE-2026-1234 or GHSA-xxxx-xxxx-xxxx)", adv.v[i]);
+	sv_free(&adv);
 	/* the recipe repository holds instructions only: no binaries, no vendored tarballs */
 	svec files = SVEC_INIT;
 	recipe_files(r, true, &files);

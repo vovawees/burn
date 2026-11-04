@@ -16,7 +16,7 @@ const char *const RECIPE_VARS[] = {
 	"category",    "source",     "sha256",         "build_type",  "srcdir",       "depends",
 	"makedepends", "features",   "patches",        "patch_strip", "options",      "backup",
 	"noextract",   "configure_args", "meson_args", "cmake_args",  "make_args",    "make_install_args",
-	"cargo_args",  "out_of_tree", "meson_subdir",  "cmake_subdir", "cflags_append", "split", NULL};
+	"cargo_args",  "out_of_tree", "meson_subdir",  "cmake_subdir", "cflags_append", "split", "security", NULL};
 /* category = layer of the base; 'extra' is for spin and user overlays; 'nonfree' is software
  * under a proprietary license (the NVIDIA driver), built only with ALLOW_NONFREE=1 */
 const char *const RECIPE_CATEGORIES[] = {"core",     "devel",    "meta",  "kernel",  "firmware",
@@ -30,7 +30,7 @@ const char *const RECIPE_OPTIONS[] = {"!lto",       "!strip",    "!hardening", "
 static const char *const ARRAY_VARS[] = {"license",   "source",         "sha256",     "depends",    "makedepends",
 					 "features",  "patches",        "options",    "backup",     "noextract",
 					 "configure_args", "meson_args", "cmake_args", "make_args", "make_install_args",
-					 "cargo_args", "split", NULL};
+					 "cargo_args", "split", "security", NULL};
 static const char *const SCALAR_DEFAULTS[][2] = {
 	{"name", ""},         {"version", ""},     {"release", "1"},     {"summary", ""},
 	{"homepage", ""},     {"category", ""},    {"build_type", "autotools"}, {"srcdir", ""},

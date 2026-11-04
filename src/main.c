@@ -59,6 +59,7 @@ static void usage(FILE *f)
 	      "      --rebuild               ignore cached builds\n"
 	      "      --force                 overwrite conflicting files, allow removing essentials\n"
 	      "      --no-sync               'update' without syncing recipes first\n"
+	      "      --security              'plan', 'update': only the updates that fix advisories (security=)\n"
 	      "      --write                 'checksum': write the sums into the recipe\n"
 	      "  -y, --yes                   do not ask for confirmation\n"
 	      "  -v, --verbose               show build output\n"
@@ -165,6 +166,8 @@ int main(int argc, char **argv)
 			B.force = true;
 		} else if (!strcmp(a, "--no-sync")) {
 			B.no_sync = true;
+		} else if (!strcmp(a, "--security")) {
+			B.security = true;
 		} else if (!strcmp(a, "--write")) {
 			B.write = true;
 		} else if (is_eq(a, "-y", "--yes")) {

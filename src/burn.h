@@ -13,7 +13,7 @@
 
 typedef struct {
 	/* command line */
-	bool verbose, force, rebuild, nodeps, no_sync, write;
+	bool verbose, force, rebuild, nodeps, no_sync, write, security;
 	char *cli_features; /* every -f, like the prototype's CLI_FEATURES */
 	char *config_file;  /* -c FILE or $BURN_CONFIG */
 	/* paths */
