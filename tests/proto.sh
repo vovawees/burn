@@ -466,8 +466,9 @@ snapshot_cache() {
 
 # What only burn in C knows (the prototype is frozen at the tag burn-prototype): split packages
 # (their own lines in search, a split line in info, lint knows their names), the category
-# nonfree and the options late, pgo and !clang, the hardware variables of profiles and the
-# backup-sums of the database (three-way backup files; left out of the root snapshots above)
+# nonfree and the options late, pgo and !clang, the hardware variables of profiles, the
+# backup-sums of the database (three-way backup files; left out of the root snapshots above) and
+# the dependencies doctor finds missing
 splits=$(sed -n 's/^split=(\(.*\))/\1/p' "$recipes"/*/recipe "$tmp"/fixtures/*/recipe | tr -s ' \t' '\n' |
 	sed '/^$/d' | paste -sd'|' -)
 c_only() { # LINE: drop the lines of WANT/GOT that differ on purpose
@@ -482,6 +483,10 @@ c_only() { # LINE: drop the lines of WANT/GOT that differ on purpose
 			for f in want.err got.err; do edit "$f" 's/^error: lint: [0-9]+ problem/error: lint: N problem/'; done
 			;;
 		*"profile show"*) edit got.out '/^(kernel_config|kernel_fragment|kernel_cmdline|firmware|modules|quirks) /d' ;;
+		*doctor*)
+			edit got.err '/^warning: .* depends on .*, which is not installed \(burn install .*\)$/d'
+			for f in want.err got.err; do edit "$f" 's/^warning: doctor: [0-9]+ problem/warning: doctor: N problem/'; done
+			;;
 	esac
 }
 
