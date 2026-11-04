@@ -40,6 +40,9 @@ static void usage(FILE *f)
 	      "  spin add <git-url|dir>      add a spin: its recipes, features, packages and services\n"
 	      "  spin remove|show <name>     take a spin back out (packages, services) / describe it\n"
 	      "  spin [list]                 the spins of the root\n"
+	      "  key [new PATH/NAME|trust NAME.pub|list]  Ed25519 keys: make one, trust one, the trusted\n"
+	      "  sign [--key K] <file>...    sign packages (FILE.sig; SIGNING_KEY signs every build)\n"
+	      "  verify <file>...            check the signatures of packages against the trusted keys\n"
 	      "  vercmp <a> <b>              compare two versions: prints -1, 0 or 1\n"
 	      "\n"
 	      "Options:\n"
@@ -78,6 +81,7 @@ static const command commands[] = {
 	{"fetch", cmd_fetch},   {"checksum", cmd_checksum}, {"build", cmd_build},   {"unpack", cmd_unpack},
 	{"sync", cmd_sync},     {"plan", cmd_plan},       {"update", cmd_update}, {"upgrade", cmd_update},
 	{"snapshot", cmd_snapshot}, {"spin", cmd_spin},
+	{"key", cmd_key},       {"sign", cmd_sign},       {"verify", cmd_verify},
 };
 
 static bool takes_value(const char *a)

@@ -947,6 +947,15 @@ char *build_pkg(const char *pkgname)
 	const char *type = rget(r, "build_type");
 	if (!bt_known(type))
 		die("%s: unknown build_type '%s'", name, type);
+	/* the same build from another machine of ours: BINARY_CACHES, signed by a trusted key */
+	if (!B.rebuild && bincache_fetch(&outs)) {
+		msg("%s %s-%s: build %s from the binary cache", r->output, ver, rel, bget(&b, "BUILDID"));
+		sv_push(&built_now, outs.v[0]);
+		sv_free(&outputs);
+		sv_free(&outs);
+		build_free(&b);
+		return out;
+	}
 	msg("Building %s %s-%s (%s, %s, %s)", name, ver, rel, bget(&b, "CHOST"), bon(&b, "CROSS") ? "cross" : "native",
 	    type);
 	if (!*bget(&b, "WORK_DIR"))
@@ -1049,6 +1058,7 @@ char *build_pkg(const char *pkgname)
 	for (size_t i = 0; i < outputs.n; i++) {
 		size_t nfiles = write_meta(&b, outputs.v[i], dests.v[i]);
 		package(&b, dests.v[i], outs.v[i], nfiles);
+		sign_built(outs.v[i]);
 	}
 	sv_push(&built_now, outs.v[0]);
 	sv_free(&dests);

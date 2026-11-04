@@ -130,6 +130,7 @@ int root_run(const char *prog, char *const args[], bool quiet); /* $R/usr/bin/PR
 char *source_path(const recipe *r, const char *spec); /* the recipe directory or the source cache */
 void fetch_sources(recipe *r, bool verify);          /* dies on a missing source or a bad sum */
 void prefetch(const svec *names);                    /* every remote source, FETCH_JOBS at a time */
+int download_quiet(const char *url, const char *file); /* also file://; 0 or not, no noise */
 int cmd_fetch(int argc, char **argv);
 int cmd_checksum(int argc, char **argv);
 
@@ -228,5 +229,16 @@ int cmd_spin(int argc, char **argv);
 /* ---- snapshot.c ---- */
 void snapshot_take(bool required); /* the btrfs snapshot of ROOT before an update */
 int cmd_snapshot(int argc, char **argv);
+
+/* ---- sign.c ---- */
+char *keys_dir(void);                                  /* $ROOT/etc/burn/keys: the trusted NAME.pub */
+void sign_file(const char *file, const char *key);     /* FILE.sig with the private key KEY */
+void sign_built(const char *file);                     /* with SIGNING_KEY, when it is set */
+/* NULL: SIGFILE is a good signature of FILE (named NAME) by a trusted key; else why not */
+char *verify_file(const char *file, const char *name, const char *sigfile);
+bool bincache_fetch(const svec *outs);                 /* the builds OUTS from BINARY_CACHES, signed */
+int cmd_sign(int argc, char **argv);
+int cmd_verify(int argc, char **argv);
+int cmd_key(int argc, char **argv);
 
 #endif

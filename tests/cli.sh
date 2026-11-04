@@ -426,6 +426,45 @@ lt_recipes 1 1 && lt install lt-mod >"$tmp/lt.log" 2>&1 || fail "late: install: 
 lt_recipes 2 2 && lt --no-sync update >"$tmp/lt.log" 2>&1 || fail "late: update: $(cat "$tmp/lt.log")"
 grep -q 'Building against the updated system: lt-mod' "$tmp/lt.log" || fail "late: message: $(cat "$tmp/lt.log")"
 [ "$(cat "$tmp/ltroot/usr/share/lt/built-for")" = 2 ] || fail "late: update builds against the new kernel"
+# signatures (Ed25519 through openssl) and the binary cache: a build of another machine is taken
+# only when a trusted key signed it; SIGNING_KEY signs every build
+if command -v openssl >/dev/null 2>&1; then
+	mkdir -p "$tmp/sgrec/sg" "$tmp/sga/etc/burn" "$tmp/sgb/etc/burn" "$tmp/keys"
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' 'name=sg' 'version=1' 'release=1' 'summary="signed"' 'homepage=https://example.org/sg' \
+		'license=(MIT)' 'category=extra' 'build_type=custom' 'do_install() {' \
+		'	mkdir -p "$DESTDIR/usr/share/sg"' '	echo built >"$DESTDIR/usr/share/sg/file"' '}' >"$tmp/sgrec/sg/recipe"
+	sg() { # ROOT CACHE ARGS...
+		r=$1 c=$2
+		shift 2
+		env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$c" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" -r "$r" \
+			-R "$tmp/sgrec" -y "$@"
+	}
+	sg "$tmp/sga" "$tmp/sgca" key new "$tmp/keys/desk" >/dev/null 2>&1 || fail "key new"
+	[ "$(stat -c %a "$tmp/keys/desk.key")" = 600 ] || fail "key new: the private key is 0600"
+	echo "SIGNING_KEY=$tmp/keys/desk.key" >"$tmp/sga/etc/burn/burn.conf"
+	sg "$tmp/sga" "$tmp/sgca" install sg >"$tmp/sg.log" 2>&1 || fail "signed build: $(cat "$tmp/sg.log")"
+	pkg=$(ls "$tmp"/sgca/packages/sg-1-1-*.pkg.tar.zst)
+	[ -f "$pkg.sig" ] || fail "SIGNING_KEY signs the build"
+	if sg "$tmp/sgb" "$tmp/sgcb" verify "$pkg" 2>/dev/null; then fail "verify: an untrusted key must fail"; fi
+	sg "$tmp/sgb" "$tmp/sgcb" key trust "$tmp/keys/desk.pub" >/dev/null 2>&1 || fail "key trust"
+	sg "$tmp/sgb" "$tmp/sgcb" key list | grep -q '^desk ' || fail "key list"
+	sg "$tmp/sgb" "$tmp/sgcb" verify "$pkg" 2>&1 | grep -q 'good signature by desk' || fail "verify"
+	cp "$pkg" "$tmp/tampered.pkg.tar.zst" && cp "$pkg.sig" "$tmp/tampered.pkg.tar.zst.sig"
+	if sg "$tmp/sgb" "$tmp/sgcb" verify "$tmp/tampered.pkg.tar.zst" 2>/dev/null; then fail "verify: another name"; fi
+	echo "BINARY_CACHES=($tmp/sgca/packages)" >"$tmp/sgb/etc/burn/burn.conf"
+	sg "$tmp/sgb" "$tmp/sgcb" install sg >"$tmp/sg.log" 2>&1 || fail "binary cache: $(cat "$tmp/sg.log")"
+	grep -q 'from the binary cache' "$tmp/sg.log" || fail "binary cache: not used: $(cat "$tmp/sg.log")"
+	if grep -q 'Building sg' "$tmp/sg.log"; then fail "binary cache: built anyway"; fi
+	[ "$(cat "$tmp/sgb/usr/share/sg/file")" = built ] || fail "binary cache: installed"
+	# a bad signature: the build is made here
+	sg "$tmp/sgb" "$tmp/sgcb" remove sg >/dev/null 2>&1
+	rm -rf "$tmp/sgcb"
+	printf 'x' >>"$pkg"
+	sg "$tmp/sgb" "$tmp/sgcb" install sg >"$tmp/sg.log" 2>&1 || fail "binary cache, bad file: $(cat "$tmp/sg.log")"
+	grep -q 'sha256 mismatch' "$tmp/sg.log" && grep -q 'Building sg' "$tmp/sg.log" ||
+		fail "binary cache: a bad signature must be refused: $(cat "$tmp/sg.log")"
+fi
 # helpers of recipe functions still reach the running burn
 mkdir -p "$tmp/self/selfdel"
 cp "$BURN" "$tmp/burn-copy"

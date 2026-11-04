@@ -4,6 +4,7 @@
 #include "burn.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +49,60 @@ static int download(const char *url, const char *file)
 	}
 	if (rc == 0 && rename(tmp, file) < 0)
 		rc = 1;
+	free(tmp);
+	return rc;
+}
+
+/* cp FROM TO: 0, or -1 (TO is removed) */
+static int copy_quiet(const char *from, const char *to)
+{
+	int in = open(from, O_RDONLY | O_CLOEXEC), out = -1, rc = -1;
+	if (in < 0)
+		return -1;
+	out = open(to, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+	char buf[65536];
+	while (out >= 0) {
+		ssize_t n = read(in, buf, sizeof buf);
+		if (n < 0 && errno == EINTR)
+			continue;
+		if (n <= 0) {
+			rc = n == 0 ? 0 : -1;
+			break;
+		}
+		if (write_all(out, buf, (size_t)n) < 0)
+			break;
+	}
+	if (out >= 0 && close(out) < 0)
+		rc = -1;
+	close(in);
+	if (rc < 0)
+		unlink(to);
+	return rc;
+}
+
+/* URL (also file://) into FILE through FILE.part, without noise: a file the server does not
+ * have is no error here (the binary cache asks for builds it may not have). 0 or not. */
+int download_quiet(const char *url, const char *file)
+{
+	char *tmp = xasprintf("%s.part", file);
+	int rc;
+	if (str_prefix(url, "file://")) {
+		rc = copy_quiet(url + 7, tmp);
+	} else if (have("curl")) {
+		char *argv[] = {"curl", "-fsL", "--connect-timeout", "10", "-o", tmp, (char *)url, NULL};
+		run_opts o = {.stdin_null = true, .quiet = true};
+		rc = run(argv, &o);
+	} else if (have("wget")) {
+		char *argv[] = {"wget", "-q", "-O", tmp, (char *)url, NULL};
+		run_opts o = {.stdin_null = true, .quiet = true};
+		rc = run(argv, &o);
+	} else {
+		die("curl or wget is required to download from %s", url);
+	}
+	if (rc == 0 && rename(tmp, file) < 0)
+		rc = 1;
+	if (rc != 0)
+		unlink(tmp);
 	free(tmp);
 	return rc;
 }

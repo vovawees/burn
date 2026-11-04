@@ -413,7 +413,7 @@ run_one() { # TOOL want|got ARGS...
 	mv "$out.root" "$root"
 	mv "$out.cache" "$tmp/cache"
 	set +e
-	env BURN_PROFILE_DIR="$profiles" BURN_CACHE="$tmp/cache" HOME="$tmp" NO_COLOR=1 LC_ALL=C \
+	env BURN_PROFILE_DIR="$profiles" BURN_CACHE="$tmp/cache" HOME="$tmp" NO_COLOR=1 LC_ALL=C BURN_BUILDID_ROOT=1 \
 		"$tool" -r "$root" -R "$recipes" -R "$tmp/fixtures" "$@" >"$out.out" 2>"$out.err" </dev/null
 	echo "exit $?" >>"$out.err"
 	set -e

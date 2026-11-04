@@ -444,6 +444,48 @@ static void profile_vars_id(const recipe *r, sbuf *s)
 	free(text);
 }
 
+/* FLAGS without what only says where the root is (-isystem ROOT/usr/include, -LROOT/usr/lib,
+ * -Wl,-rpath-link,ROOT/usr/lib, --sysroot=ROOT): the root a machine builds for, wherever it keeps
+ * it, gives the same build id as that machine building for its own / (the binary cache takes builds
+ * by their id). BURN_BUILDID_ROOT=1 keeps them, as the bash prototype did (make proto). */
+static void flags_id(sbuf *s, build *b, const char *flags)
+{
+	const char *roots[] = {bget(b, "R"), bget(b, "SYSROOT")};
+	svec w = SVEC_INIT;
+	sv_split_ws(&w, flags);
+	bool keep_root = getenv("BURN_BUILDID_ROOT") && !strcmp(getenv("BURN_BUILDID_ROOT"), "1");
+	bool *drop = xcalloc(w.n + 1, sizeof(bool));
+	for (size_t i = 0; i < w.n && !keep_root; i++)
+		for (size_t r = 0; r < ARRAY_LEN(roots); r++) {
+			size_t n = strlen(roots[r]);
+			const char *p = n > 1 ? strstr(w.v[i], roots[r]) : NULL;
+			if (p && (p[n] == '/' || !p[n]))
+				drop[i] = true;
+		}
+	static const char *const takes_arg[] = {"-isystem", "-I", "-L", "-idirafter", "-iquote", "--sysroot"};
+	for (size_t i = 0; i + 1 < w.n; i++)
+		for (size_t a = 0; a < ARRAY_LEN(takes_arg); a++)
+			if (drop[i + 1] && !strcmp(w.v[i], takes_arg[a]))
+				drop[i] = true;
+	bool any = false;
+	for (size_t i = 0; i < w.n; i++)
+		any = any || drop[i];
+	if (!any) /* nothing about the root: the flags as they are (the ids of / never change) */
+		sb_adds(s, flags);
+	bool first = true;
+	for (size_t i = 0; any && i < w.n; i++) {
+		if (drop[i])
+			continue;
+		if (!first)
+			sb_addc(s, ' ');
+		sb_adds(s, w.v[i]);
+		first = false;
+	}
+	sb_addc(s, '\n');
+	free(drop);
+	sv_free(&w);
+}
+
 /* Identity of the exact build: recipe + toolchain + flags + the hardware variables of the profile
  * it uses + the ABI (sonames) of the installed dependencies. It names the cached package, so a
  * soname bump of a dependency never reuses a stale build. */
@@ -454,8 +496,10 @@ static char *recipe_buildid(build *b)
 	sha256_init(&c);
 	char *rid = recipe_rid(r);
 	sbuf s = SBUF_INIT;
-	sb_addf(&s, "%s\n%s\n%s\n%s\n%s\n", rid, bget(b, "CHOST"), bget(b, "CFLAGS"), bget(b, "CXXFLAGS"),
-		bget(b, "LDFLAGS"));
+	sb_addf(&s, "%s\n%s\n", rid, bget(b, "CHOST"));
+	flags_id(&s, b, bget(b, "CFLAGS"));
+	flags_id(&s, b, bget(b, "CXXFLAGS"));
+	flags_id(&s, b, bget(b, "LDFLAGS"));
 	sb_addf(&s, "%s%s%s%s %s\n", bget(b, "KEEP_DOCS"), bget(b, "KEEP_INFO"), bget(b, "KEEP_MAN"),
 		bget(b, "STRIP_BINARIES"), bget(b, "LOCALES"));
 	profile_vars_id(r, &s);

@@ -108,6 +108,7 @@ void config_defaults(void)
 		{"BUILD_USER", "burn"},
 		{"HOST_DEPS", "0"},
 		{"ALLOW_NONFREE", "0"},
+		{"SIGNING_KEY", ""},
 		{"CCACHE", "0"},
 		{"CCACHE_SIZE", "5G"},
 		{"LINKER", ""},
@@ -124,6 +125,7 @@ void config_defaults(void)
 	for (size_t i = 0; i < ARRAY_LEN(scalars); i++)
 		cfg_set(scalars[i][0], scalars[i][1]);
 	cfg_list("ASSUME_INSTALLED", 0, NULL);
+	cfg_list("BINARY_CACHES", 0, NULL);
 	static const char *const essential[] = {"filesystem", "glibc", "bash", "coreutils", "burn"};
 	cfg_list("ESSENTIAL", ARRAY_LEN(essential), essential);
 	static const char *const core[] = {"glibc", "gcc", "binutils", "linux", "mesa", "llvm"};

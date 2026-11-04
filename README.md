@@ -63,6 +63,7 @@ git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/Clean
 | `VIDEO_CARDS` профиля включает особенности `video_cards_<карта>` рецепта (как USE_EXPAND в Gentoo): зависимость может идти за GPU — `llvm:video_cards_intel` | `query`, `build` | ✅ |
 | изоляция сборки: фазы без сети (своё сетевое пространство имён, только `lo`), от root — от непривилегированного `BUILD_USER` (`ISOLATE=auto\|1\|0`) | `build`, `install` | ✅ |
 | SHA-256 на SHA-NI (x86-64, выбор по cpuid) | `fetch`, `checksum`, `build` | ✅ |
+| подписи пакетов (Ed25519 через `openssl`, доверенные ключи в `/etc/burn/keys`) и бинарный кеш своих машин (`BINARY_CACHES`): чужая сборка берётся только с верной подписью | `key`, `sign`, `verify`, `build`, `install` | ✅ |
 
 C-версия и прототип работают с одной и той же базой и одним кэшем пакетов, так что их можно чередовать
 (сборки знает только C-версия).
