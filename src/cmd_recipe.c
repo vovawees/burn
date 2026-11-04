@@ -57,17 +57,23 @@ int cmd_search(int argc, char **argv)
 			free(err);
 			continue;
 		}
-		char *head = xasprintf("%s %s-%s", rget(r, "name"), rget(r, "version"), rget(r, "release"));
-		char *line = xasprintf("%s|%s", head, rget(r, "summary"));
-		char *l = lower(line);
-		if (regexec(&re, l, 0, NULL, 0) == 0) {
-			char *left = xasprintf("%s%s", head, db_has(names.v[i]) ? " [installed]" : "");
-			printf("%-34s %s\n", left, rget(r, "summary"));
-			free(left);
+		svec outputs = SVEC_INIT;
+		recipe_outputs(r, &outputs);
+		for (size_t k = 0; k < outputs.n; k++) {
+			const char *o = outputs.v[k], *sum = output_get(r, o, "summary");
+			char *head = xasprintf("%s %s-%s", o, rget(r, "version"), rget(r, "release"));
+			char *line = xasprintf("%s|%s", head, sum);
+			char *l = lower(line);
+			if (regexec(&re, l, 0, NULL, 0) == 0) {
+				char *left = xasprintf("%s%s", head, db_has(o) ? " [installed]" : "");
+				printf("%-34s %s\n", left, sum);
+				free(left);
+			}
+			free(l);
+			free(line);
+			free(head);
 		}
-		free(l);
-		free(line);
-		free(head);
+		sv_free(&outputs);
 		recipe_free(r);
 	}
 	sv_free(&names);
@@ -87,7 +93,7 @@ int cmd_info(int argc, char **argv)
 		die("usage: burn info <pkg>");
 	recipe *r = recipe_load(argv[0]);
 	features_resolve(r);
-	const char *name = rget(r, "name");
+	const char *name = r->output;
 	char *inst;
 	if (db_has(name)) {
 		char *v = db_get(name, "version"), *rel = db_get(name, "release"), *f = db_get(name, "features");
@@ -104,14 +110,15 @@ int cmd_info(int argc, char **argv)
 		inst = t;
 	}
 	char *ver = xasprintf("%s-%s", rget(r, "version"), rget(r, "release"));
-	svec lic = SVEC_INIT;
-	rlist(r, "license", &lic);
+	svec lic = SVEC_INIT, dl = SVEC_INIT, splits = SVEC_INIT;
+	output_list(r, name, "license", &lic);
 	char *license = sv_join(&lic, " ");
-	char *deps = join_or_dash(r, "depends"), *mdeps = join_or_dash(r, "makedepends");
+	output_list(r, name, "depends", &dl);
+	char *deps = dl.n ? sv_join(&dl, " ") : xstrdup("-"), *mdeps = join_or_dash(r, "makedepends");
 	char *opts = join_or_dash(r, "options"), *feats = features_string(r);
 	kv("name", name);
 	kv("version", ver);
-	kv("summary", rget(r, "summary"));
+	kv("summary", output_get(r, name, "summary"));
 	kv("homepage", rget(r, "homepage"));
 	kv("license", license);
 	kv("category", *rget(r, "category") ? rget(r, "category") : "-");
@@ -121,6 +128,16 @@ int cmd_info(int argc, char **argv)
 	kv("features", feats);
 	kv("options", opts);
 	kv("installed", inst);
+	rlist(r, "split", &splits);
+	if (!recipe_is_main(r, name)) {
+		kv("split of", rget(r, "name"));
+	} else if (splits.n) {
+		char *j = sv_join(&splits, " ");
+		kv("split", j);
+		free(j);
+	}
+	sv_free(&splits);
+	sv_free(&dl);
 	kv("recipe", r->file);
 	svec src = SVEC_INIT;
 	rlist(r, "source", &src);
@@ -170,6 +187,19 @@ int cmd_query(int argc, char **argv)
 			source_spec_free(&s);
 		}
 		sv_free(&src);
+	} else if (!recipe_is_main(r, r->output) &&
+		   (!strcmp(var, "name") || !strcmp(var, "summary") || !strcmp(var, "depends") ||
+		    !strcmp(var, "license") || !strcmp(var, "backup") || !strcmp(var, "files"))) {
+		/* a split package: its own values */
+		if (!strcmp(var, "name") || !strcmp(var, "summary")) {
+			puts(!strcmp(var, "name") ? r->output : output_get(r, r->output, var));
+		} else {
+			svec v = SVEC_INIT;
+			output_list(r, r->output, var, &v);
+			for (size_t i = 0; i < v.n; i++)
+				puts(v.v[i]);
+			sv_free(&v);
+		}
 	} else {
 		if (!in_list(var, RECIPE_VARS))
 			die("unknown recipe variable: %s", var);
@@ -320,12 +350,43 @@ static int lint_one(const char *target)
 		free(a);
 		free(b);
 	}
-	svec feats = SVEC_INIT, known = SVEC_INIT, deps = SVEC_INIT;
+	svec feats = SVEC_INIT, known = SVEC_INIT, deps = SVEC_INIT, splits = SVEC_INIT;
 	rlist(r, "features", &feats);
 	for (size_t i = 0; i < feats.n; i++)
 		sv_push(&known, feats.v[i] + (feats.v[i][0] == '+' || feats.v[i][0] == '-'));
 	rlist(r, "depends", &deps);
 	rlist(r, "makedepends", &deps);
+	/* split packages: own names, files, summary and dependencies */
+	rlist(r, "split", &splits);
+	for (size_t i = 0; i < splits.n; i++) {
+		const char *sp = splits.v[i];
+		char *key = split_key(sp);
+		if (!good_name(sp))
+			sv_pushf(&e, "bad split name '%s'", sp);
+		else if (!strcmp(sp, name))
+			sv_pushf(&e, "split '%s' is the name of the recipe", sp);
+		for (size_t k = 0; k < i; k++)
+			if (!strcmp(splits.v[k], sp))
+				sv_pushf(&e, "split '%s' twice", sp);
+		svec dirs = SVEC_INIT;
+		recipe_dirs(&dirs);
+		for (size_t k = 0; k < dirs.n; k++) {
+			char *other = xasprintf("%s/%s/recipe", dirs.v[k], sp);
+			if (is_file(other))
+				sv_pushf(&e, "split '%s' is also a recipe: %s", sp, other);
+			free(other);
+		}
+		sv_free(&dirs);
+		svec files = SVEC_INIT;
+		output_list(r, sp, "files", &files);
+		if (!files.n)
+			sv_pushf(&e, "split '%s' has no files_%s", sp, key);
+		sv_free(&files);
+		if (!*output_get(r, sp, "summary"))
+			sv_pushf(&e, "split '%s' has no summary_%s", sp, key);
+		output_list(r, sp, "depends", &deps);
+		free(key);
+	}
 	for (size_t i = 0; i < deps.n; i++) {
 		const char *d = deps.v[i], *colon = strchr(d, ':');
 		char *pkg = colon ? xstrndup(d, (size_t)(colon - d)) : xstrdup(d);
@@ -369,6 +430,7 @@ static int lint_one(const char *target)
 	sv_free(&files);
 	sv_free(&opts);
 	sv_free(&deps);
+	sv_free(&splits);
 	sv_free(&known);
 	sv_free(&feats);
 	sv_free(&patches);

@@ -260,6 +260,61 @@ if command -v git >/dev/null; then
 	[ ! -e "$tmp/sproot/var/lib/burn/spins/gitspin" ] || fail "spin remove: the clone"
 	[ -f "$tmp/sproot/usr/share/spinlib/file" ] || fail "spin remove: what was installed before stays"
 fi
+# split packages: one build makes every package of the recipe; each installs on its own, the
+# files of a split belong to it, and files move between the packages of one recipe on update
+spl() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/splcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$tmp/splroot" -R "$tmp/splrec" --host-deps "$@"; }
+sdb=$tmp/splroot/var/lib/burn/installed
+mkdir -p "$tmp/splrec" && cp -r "$fixtures/bt-split" "$tmp/splrec/"
+spl lint bt-split >/dev/null 2>&1 || fail "split: lint"
+spl info bt-split-data | grep -q '^split of  *bt-split$' || fail "split: info of a split"
+spl info bt-split | grep -q '^split  *bt-split-libs bt-split-data$' || fail "split: info of the recipe"
+spl search 'data files' | grep -q '^bt-split-data 1\.0-1 ' || fail "split: search"
+[ "$(spl query bt-split-data license)" = CC0-1.0 ] || fail "split: own license"
+[ "$(spl query bt-split-libs license)" = MIT ] || fail "split: the license of the recipe"
+spl -y install bt-split-libs >"$tmp/spl.log" 2>&1 || fail "split: install bt-split-libs: $(cat "$tmp/spl.log")"
+[ "$(find "$tmp/splcache/packages" -name 'bt-split*' | wc -l)" -eq 3 ] || fail "split: one build, three packages"
+grep -q 'split bt-split-libs: nothing matches usr/lib/nothing-here.so.\*' "$tmp/spl.log" || fail "split: no-match warning"
+[ "$(spl list | awk '{print $1}' | tr '\n' ' ')" = "bt-split-libs " ] || fail "split: only the library"
+[ -f "$tmp/splroot/usr/lib/libbtsplit.so.1" ] && [ ! -e "$tmp/splroot/usr/bin/btsplit" ] || fail "split: files"
+grep -qx 'libbtsplit.so.1' "$sdb/bt-split-libs/provides-so" || fail "split: provides-so"
+grep -qx 'base=bt-split' "$sdb/bt-split-libs/meta" || fail "split: base= in the metadata"
+spl -y install bt-split-data >"$tmp/spl.log" 2>&1 || fail "split: install bt-split-data"
+[ "$(grep -c '^==> Building' "$tmp/spl.log")" -eq 0 ] || fail "split: the build is reused: $(cat "$tmp/spl.log")"
+[ "$(spl list | awk '{print $1}' | tr '\n' ' ')" = "bt-split bt-split-data bt-split-libs " ] || fail "split: dependencies"
+grep -qx 'libbtsplit.so.1' "$sdb/bt-split/needs-so" || fail "split: needs-so of the main package"
+if grep -q 'libbtsplit.so.1$' "$sdb/bt-split/files"; then fail "split: the library left the main package"; fi
+grep -qx 'usr/share/bt-split/levels/1.txt' "$sdb/bt-split-data/files" || fail "split: a directory"
+[ ! -e "$tmp/splroot/usr/share/bt-split" ] || [ -f "$tmp/splroot/usr/share/bt-split/levels/1.txt" ] || fail "split: data"
+spl doctor >/dev/null 2>&1 || fail "split: doctor"
+if spl -y remove bt-split-libs 2>"$tmp/err"; then fail "split: remove a split others need"; fi
+grep -q 'bt-split-libs is required by: bt-split' "$tmp/err" || fail "split: required by"
+# a new release: plan lists every installed package of the recipe, update builds it once; the
+# development link moves from bt-split to bt-split-libs and stays on disk
+sed -i -e 's/^release=1$/release=2/' -e "s|^files_bt_split_libs=(|files_bt_split_libs=(usr/lib/libbtsplit.so |" \
+	"$tmp/splrec/bt-split/recipe"
+[ "$(spl plan 2>&1 | grep -c ' upgrade')" -eq 3 ] || fail "split: plan: $(spl plan 2>&1)"
+spl -y --no-sync update >"$tmp/spl.log" 2>&1 || fail "split: update: $(cat "$tmp/spl.log")"
+[ "$(grep -c '^==> Building bt-split ' "$tmp/spl.log")" -eq 1 ] || fail "split: update builds once: $(cat "$tmp/spl.log")"
+grep -q 'bt-split-libs takes over 1 file(s) from bt-split' "$tmp/spl.log" || fail "split: takeover: $(cat "$tmp/spl.log")"
+[ -L "$tmp/splroot/usr/lib/libbtsplit.so" ] || fail "split: the moved file stays"
+spl owner /usr/lib/libbtsplit.so | grep -q 'owned by bt-split-libs 1.0-2' || fail "split: new owner"
+[ "$(spl list | grep -c '1.0-2')" -eq 3 ] || fail "split: all updated"
+# a split no file matches, a split without files or summary
+mkdir -p "$tmp/splbad/sb"
+# shellcheck disable=SC2016 # the recipe expands these
+printf '%s\n' 'name=sb' 'version=1' 'release=1' 'summary="bad splits"' 'homepage=https://example.org/sb' \
+	'license=(MIT)' 'category=extra' 'build_type=custom' 'split=(sb-none sb-empty sb)' \
+	'summary_sb_none="matches nothing"' "files_sb_none=(usr/nothing)" \
+	'do_install() {' '	mkdir -p "$DESTDIR/usr/share/sb"' '	echo x >"$DESTDIR/usr/share/sb/x"' '}' \
+	>"$tmp/splbad/sb/recipe"
+spl -R "$tmp/splbad" lint sb >"$tmp/out" 2>/dev/null && fail "split: lint must fail"
+grep -q "split 'sb' is the name of the recipe" "$tmp/out" || fail "split lint: own name"
+grep -q "split 'sb-empty' has no files_sb_empty" "$tmp/out" || fail "split lint: files"
+grep -q "split 'sb-empty' has no summary_sb_empty" "$tmp/out" || fail "split lint: summary"
+sed -i 's/^split=.*/split=(sb-none)/' "$tmp/splbad/sb/recipe"
+if spl -R "$tmp/splbad" build sb >/dev/null 2>"$tmp/err"; then fail "split: a split without files must fail"; fi
+grep -q 'split sb-none: no file of the build matches files_sb_none' "$tmp/err" || fail "split: message: $(cat "$tmp/err")"
 # a build outlives the file of its burn (burn installed a new burn, then builds more): the
 # helpers of recipe functions still reach the running burn
 mkdir -p "$tmp/self/selfdel"

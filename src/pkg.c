@@ -800,7 +800,49 @@ static void db_replace(const char *name, const pkg_info *p, const sbuf *preserve
 
 /* ---- install ---- */
 
-static void check_conflicts(const char *name, const svec *files)
+/* the recipe a package comes from: base= of a split package, else its own name */
+static char *pkg_origin(const char *name, const svec *meta)
+{
+	const char *b = meta ? meta_get(meta, "base") : NULL;
+	if (b && *b)
+		return xstrdup(b);
+	if (!meta) {
+		char *v = db_get(name, "base");
+		if (v && *v)
+			return v;
+		free(v);
+	}
+	return xstrdup(name);
+}
+
+/* drop PATHS from the db list KIND ("files", "preserved") of the installed package NAME:
+ * another package owns them now */
+static void db_disown(const char *name, const char *kind, const strmap *paths)
+{
+	svec lines = SVEC_INIT;
+	db_lines(name, kind, &lines);
+	sbuf out = SBUF_INIT;
+	size_t dropped = 0;
+	for (size_t i = 0; i < lines.n; i++) {
+		if (*lines.v[i] && sm_has(paths, lines.v[i]))
+			dropped++;
+		else
+			sb_addf(&out, "%s\n", lines.v[i]);
+	}
+	if (dropped) {
+		char *f = db_path(name, kind);
+		if (file_write(f, out.s ? out.s : "", out.len, 0644) < 0)
+			die_errno("cannot write %s", f);
+		free(f);
+	}
+	sb_free(&out);
+	sv_free(&lines);
+}
+
+/* Files of another package are a conflict, except between the packages of one recipe (split
+ * packages): files move from one to the other when a recipe is split, the new package takes
+ * them over (TAKEN: package, path, package, path, ...). */
+static void check_conflicts(const char *name, const char *origin, const svec *files, svec *taken)
 {
 	strmap want = STRMAP_INIT;
 	for (size_t i = 0; i < files->n; i++)
@@ -815,9 +857,19 @@ static void check_conflicts(const char *name, const svec *files)
 			continue;
 		svec theirs = SVEC_INIT;
 		db_lines(pkgs.v[i], "files", &theirs);
-		for (size_t j = 0; j < theirs.n; j++)
-			if (sm_has(&want, theirs.v[j]) && ++found <= 20)
+		char *their_origin = pkg_origin(pkgs.v[i], NULL);
+		bool sibling = !strcmp(their_origin, origin);
+		free(their_origin);
+		for (size_t j = 0; j < theirs.n; j++) {
+			if (!sm_has(&want, theirs.v[j]))
+				continue;
+			if (sibling) {
+				sv_push(taken, pkgs.v[i]);
+				sv_push(taken, theirs.v[j]);
+			} else if (++found <= 20) {
 				sb_addf(&out, "  /%s (owned by %s)\n", theirs.v[j], pkgs.v[i]);
+			}
+		}
 		sv_free(&theirs);
 	}
 	if (found) {
@@ -850,7 +902,10 @@ void pkg_install_file(const char *file, const char *op)
 			goto out;
 		}
 	}
-	check_conflicts(name, &p.files);
+	char *origin = pkg_origin(name, &p.meta);
+	svec taken = SVEC_INIT;
+	check_conflicts(name, origin, &p.files, &taken);
+	free(origin);
 	if (!old)
 		msg("Installing %s %s", name, ver);
 	else if (!strcmp(old, ver))
@@ -899,9 +954,31 @@ void pkg_install_file(const char *file, const char *op)
 		strmap prov = STRMAP_INIT;
 		for (size_t i = 0; i < p.provides.n; i++)
 			sm_put(&prov, p.provides.v[i], 0);
+		svec gone = SVEC_INIT;
 		for (size_t i = 0; i < oldprov.n; i++)
 			if (!sm_has(&prov, oldprov.v[i]))
-				sv_push(&txn_lost, oldprov.v[i]);
+				sv_push(&gone, oldprov.v[i]);
+		/* a soname another installed package provides is not lost (a split package has it) */
+		if (gone.n) {
+			strmap others = STRMAP_INIT;
+			svec pkgs = SVEC_INIT;
+			db_list(&pkgs);
+			for (size_t i = 0; i < pkgs.n; i++) {
+				if (!strcmp(pkgs.v[i], name))
+					continue;
+				svec so = SVEC_INIT;
+				db_lines(pkgs.v[i], "provides-so", &so);
+				for (size_t j = 0; j < so.n; j++)
+					sm_put(&others, so.v[j], 0);
+				sv_free(&so);
+			}
+			for (size_t i = 0; i < gone.n; i++)
+				if (!sm_has(&others, gone.v[i]))
+					sv_push(&txn_lost, gone.v[i]);
+			sv_free(&pkgs);
+			sm_free(&others);
+		}
+		sv_free(&gone);
 		sm_free(&prov);
 		sv_free(&oldf);
 		sv_free(&kept);
@@ -918,11 +995,37 @@ void pkg_install_file(const char *file, const char *op)
 	}
 	db_replace(name, &p, &preserved, with_preserved);
 	sb_free(&preserved);
+	/* what this package installed is its own now: out of the lists of its sibling packages
+	 * (taken over) and of every package that kept an old copy as a preserved library */
+	{
+		strmap mine = STRMAP_INIT;
+		for (size_t i = 0; i < p.files.n; i++)
+			if (!str_suffix(p.files.v[i], "/"))
+				sm_put(&mine, p.files.v[i], 0);
+		svec pkgs = SVEC_INIT;
+		db_list(&pkgs);
+		for (size_t i = 0; i < pkgs.n; i++) {
+			if (strcmp(pkgs.v[i], name))
+				db_disown(pkgs.v[i], "preserved", &mine);
+		}
+		for (size_t i = 0; i < taken.n; i += 2) {
+			if (i == 0 || strcmp(taken.v[i], taken.v[i - 2])) {
+				size_t n = 0;
+				for (size_t k = i; k < taken.n && !strcmp(taken.v[k], taken.v[i]); k += 2)
+					n++;
+				msg2("%s takes over %zu file(s) from %s", name, n, taken.v[i]);
+				db_disown(taken.v[i], "files", &mine);
+			}
+		}
+		sv_free(&pkgs);
+		sm_free(&mine);
+	}
 	if (old)
 		history_add(op ? op : "upgrade", name, old, ver, old_file);
 	else
 		history_add(op ? op : "install", name, "-", ver, "");
 	triggers_note(&p.files, true);
+	sv_free(&taken);
 out:
 	sv_free(&om);
 	free(old);
@@ -1059,6 +1162,14 @@ void preserved_cleanup(void)
 		}
 		sv_free(&pres);
 	}
+	strmap owned = STRMAP_INIT;
+	if (any) {
+		svec files = SVEC_INIT;
+		db_all_lines("files", &files);
+		for (size_t i = 0; i < files.n; i++)
+			sm_put(&owned, files.v[i], 0);
+		sv_free(&files);
+	}
 	for (size_t i = 0; any && i < pkgs.n; i++) {
 		svec pres = SVEC_INIT;
 		db_lines(pkgs.v[i], "preserved", &pres);
@@ -1074,6 +1185,8 @@ void preserved_cleanup(void)
 				changed = true;
 			} else if (sm_has(&keep, f)) {
 				sb_addf(&out, "%s\n", f);
+			} else if (sm_has(&owned, f)) {
+				changed = true; /* another package ships this file now */
 			} else {
 				if (root_unlink(f) < 0 && errno != ENOENT)
 					warn("cannot remove /%s: %s", f, strerror(errno));
@@ -1094,4 +1207,5 @@ void preserved_cleanup(void)
 	sv_free(&needs);
 	sm_free(&needed);
 	sm_free(&keep);
+	sm_free(&owned);
 }

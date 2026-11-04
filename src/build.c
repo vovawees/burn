@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
+#include <glob.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -536,27 +537,29 @@ static char *utc(long long t, bool iso)
 	return xstrdup(buf);
 }
 
-/* returns the number of files (not directories) */
-static size_t write_meta(build *b)
+/* the metadata of the package OUTPUT, whose tree is D; returns the number of files (not
+ * directories) */
+static size_t write_meta(build *b, const char *output, const char *d)
 {
 	recipe *r = b->r;
-	const char *d = bget(b, "DESTDIR");
 	char *m = path_join(d, ".BURN");
 	mkdirs(m);
 	svec lic = SVEC_INIT, deps = SVEC_INIT, act = SVEC_INIT, backup = SVEC_INIT;
-	rlist(r, "license", &lic);
-	rlist(r, "depends", &deps);
+	output_list(r, output, "license", &lic);
+	output_list(r, output, "depends", &deps);
 	deps_active(r, &deps, &act);
-	rlist(r, "backup", &backup);
+	output_list(r, output, "backup", &backup);
 	char *rid = recipe_rid(r), *feat = features_string(r);
 	char *l = sv_join(&lic, " "), *a = sv_join(&act, " "), *bk = sv_join(&backup, " ");
 	char *date = utc(strtoll(bget(b, "SOURCE_DATE_EPOCH"), NULL, 10), true);
 	const char *cflags = *bget(b, "META_CFLAGS") ? bget(b, "META_CFLAGS") : bget(b, "CFLAGS");
 	sbuf s = SBUF_INIT;
-	sb_addf(&s, "name=%s\nversion=%s\nrelease=%s\narch=%s\nchost=%s\n", rget(r, "name"), rget(r, "version"),
+	sb_addf(&s, "name=%s\nversion=%s\nrelease=%s\narch=%s\nchost=%s\n", output, rget(r, "version"),
 		rget(r, "release"), bget(b, "CARCH"), bget(b, "CHOST"));
+	if (!recipe_is_main(r, output))
+		sb_addf(&s, "base=%s\n", rget(r, "name")); /* the recipe of a split package */
 	sb_addf(&s, "buildid=%s\nrid=%s\nprofile=%s\n", bget(b, "BUILDID"), rid, bget(b, "PROFILE"));
-	sb_addf(&s, "summary=%s\nlicense=%s\ndepends=%s\n", rget(r, "summary"), l, a);
+	sb_addf(&s, "summary=%s\nlicense=%s\ndepends=%s\n", output_get(r, output, "summary"), l, a);
 	sb_addf(&s, "features=%s\nbackup=%s\n", feat, bk);
 	sb_addf(&s, "cflags=%s\nldflags=%s\nbuilddate=%s\n", cflags, bget(b, "LDFLAGS"), date);
 	char *f = path_join(m, "meta");
@@ -687,13 +690,13 @@ static void du_h(const char *file, char *buf, size_t size)
 		snprintf(buf, size, "%" PRIu64 "%s", amt, frac);
 }
 
-static void package(build *b, const char *out, size_t nfiles)
+static void package(build *b, const char *dest, const char *out, size_t nfiles)
 {
 	int level, threads;
 	pkg_compress(b, &level, &threads);
 	char *dir = path_dir(out), *part = xasprintf("%s.part", out), *err = NULL;
 	mkdirs(dir);
-	if (tar_write_dir(bget(b, "DESTDIR"), part, strtoll(bget(b, "SOURCE_DATE_EPOCH"), NULL, 10), level, threads,
+	if (tar_write_dir(dest, part, strtoll(bget(b, "SOURCE_DATE_EPOCH"), NULL, 10), level, threads,
 			  &err) < 0)
 		die("%s", err);
 	if (rename(part, out) < 0)
@@ -705,6 +708,92 @@ static void package(build *b, const char *out, size_t nfiles)
 	free(dir);
 }
 
+/* ---- split packages: the files of a split leave DESTDIR for its own tree ---- */
+
+/* mkdir -p DST/REL with the modes of the directories of SRC/REL */
+static void mkdirs_like(const char *src, const char *dst, const char *rel)
+{
+	char *path = xstrdup(rel);
+	for (char *p = path;; p++) {
+		if (*p && *p != '/')
+			continue;
+		char c = *p;
+		*p = 0;
+		if (*path && strcmp(path, ".")) {
+			char *from = path_join(src, path), *to = path_join(dst, path);
+			struct stat st;
+			mode_t mode = stat(from, &st) == 0 ? (st.st_mode & 07777) : 0755;
+			if (mkdir(to, 0700) == 0) {
+				if (chmod(to, mode) < 0)
+					die_errno("cannot chmod %s", to);
+			} else if (errno != EEXIST) {
+				die_errno("cannot create %s", to);
+			}
+			free(from);
+			free(to);
+		}
+		*p = c;
+		if (!c)
+			break;
+	}
+	free(path);
+}
+
+/* move what files_KEY of SPLIT matches from DESTDIR to DEST; a pattern that matches nothing is
+ * a warning (an architecture may not build that file), a split without files an error */
+static void split_move(build *b, const char *split, const char *dest)
+{
+	recipe *r = b->r;
+	const char *d = bget(b, "DESTDIR"), *name = rget(r, "name");
+	char *key = split_key(split);
+	svec pats = SVEC_INIT;
+	output_list(r, split, "files", &pats);
+	if (!pats.n)
+		die("%s: split %s: files_%s is empty", name, split, key);
+	rm_rf(dest);
+	mkdirs(dest);
+	size_t moved = 0;
+	for (size_t i = 0; i < pats.n; i++) {
+		const char *pat = pats.v[i];
+		while (*pat == '/')
+			pat++;
+		if (!*pat || !strcmp(pat, "..") || str_prefix(pat, "../") || strstr(pat, "/../") ||
+		    str_suffix(pat, "/.."))
+			die("%s: split %s: bad pattern '%s' in files_%s", name, split, pats.v[i], key);
+		char *full = path_join(d, pat);
+		glob_t g;
+		size_t n = 0;
+		if (glob(full, 0, NULL, &g) == 0) {
+			for (size_t k = 0; k < g.gl_pathc; k++) {
+				const char *m = g.gl_pathv[k];
+				if (!exists(m)) /* inside a directory an earlier match moved */
+					continue;
+				const char *rel = m + strlen(d) + 1;
+				char *pd = path_dir(rel), *to = path_join(dest, rel);
+				mkdirs_like(d, dest, pd);
+				if (rename(m, to) < 0)
+					die_errno("cannot move %s to %s", m, to);
+				free(pd);
+				free(to);
+				n++;
+			}
+			globfree(&g);
+		}
+		if (!n)
+			warn("%s: split %s: nothing matches %s", name, split, pat);
+		moved += n;
+		free(full);
+	}
+	if (!moved)
+		die("%s: split %s: no file of the build matches files_%s", name, split, key);
+	sv_free(&pats);
+	free(key);
+}
+
+/* the packages built in this run, by their first file: --rebuild and the ABI follow-up build a
+ * recipe with split packages only once */
+static svec built_now = SVEC_INIT;
+
 /* ---- build ---- */
 
 char *build_pkg(const char *pkgname)
@@ -715,10 +804,23 @@ char *build_pkg(const char *pkgname)
 	build_init(&b, r);
 	recipe_env(&b);
 	const char *name = rget(r, "name"), *ver = rget(r, "version"), *rel = rget(r, "release");
-	char *out = xasprintf("%s/packages/%s-%s-%s-%s-%s.pkg.tar.zst", bget(&b, "CACHE_DIR"), name, ver, rel,
-			      bget(&b, "CARCH"), bget(&b, "BUILDID"));
-	if (is_file(out) && !B.rebuild) {
-		msg("%s %s-%s: using cached build %s", name, ver, rel, bget(&b, "BUILDID"));
+	/* every package of the recipe: the build makes them all at once */
+	svec outputs = SVEC_INIT, outs = SVEC_INIT;
+	recipe_outputs(r, &outputs);
+	size_t want = 0;
+	bool cached = true;
+	for (size_t i = 0; i < outputs.n; i++) {
+		sv_push_own(&outs, xasprintf("%s/packages/%s-%s-%s-%s-%s.pkg.tar.zst", bget(&b, "CACHE_DIR"),
+					     outputs.v[i], ver, rel, bget(&b, "CARCH"), bget(&b, "BUILDID")));
+		if (!strcmp(outputs.v[i], r->output))
+			want = i;
+		cached = cached && is_file(outs.v[i]);
+	}
+	char *out = xstrdup(outs.v[want]);
+	if (cached && (!B.rebuild || (outputs.n > 1 && sv_has(&built_now, outs.v[0])))) {
+		msg("%s %s-%s: using cached build %s", r->output, ver, rel, bget(&b, "BUILDID"));
+		sv_free(&outputs);
+		sv_free(&outs);
 		build_free(&b);
 		return out;
 	}
@@ -800,8 +902,23 @@ char *build_pkg(const char *pkgname)
 		phase(&b, "post_install", "post_install", type, NULL);
 	msg2("finalize");
 	finalize(&b);
-	size_t nfiles = write_meta(&b);
-	package(&b, out, nfiles);
+	svec dests = SVEC_INIT;
+	sv_push(&dests, bget(&b, "DESTDIR"));
+	for (size_t i = 1; i < outputs.n; i++) {
+		char *dest = xasprintf("%s-%s", bget(&b, "DESTDIR"), outputs.v[i]);
+		split_move(&b, outputs.v[i], dest);
+		sv_push_own(&dests, dest);
+	}
+	if (outputs.n > 1 && !rhas_option(r, "emptydirs"))
+		prune_empty(bget(&b, "DESTDIR"), true);
+	for (size_t i = 0; i < outputs.n; i++) {
+		size_t nfiles = write_meta(&b, outputs.v[i], dests.v[i]);
+		package(&b, dests.v[i], outs.v[i], nfiles);
+	}
+	sv_push(&built_now, outs.v[0]);
+	sv_free(&dests);
+	sv_free(&outputs);
+	sv_free(&outs);
 	if (strcmp(bget(&b, "KEEP_WORK"), "1"))
 		rm_rf(work);
 	free(work);

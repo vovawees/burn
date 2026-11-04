@@ -61,6 +61,7 @@ typedef struct {
 typedef struct {
 	char *file; /* RECIPE_FILE */
 	char *dir;  /* RECIPE_DIR */
+	char *output; /* the package asked for: name, or one of split=() */
 	shenv env;  /* the recipe's variables, on top of B.cfg */
 	svec funcs; /* the functions it defines */
 	feature *feat;
@@ -89,6 +90,14 @@ bool recipe_use(const recipe *r, const char *feat);
 void deps_active(const recipe *r, const svec *deps, svec *out);
 void files_under(const char *dir, svec *out); /* regular files below dir, recursively, sorted */
 char *recipe_rid(const recipe *r);
+/* split packages: split=(NAME...) with files_KEY, summary_KEY, depends_KEY, ... */
+char *split_key(const char *name); /* gcc-libs -> gcc_libs */
+bool recipe_has_split(const recipe *r, const char *name);
+void recipe_outputs(const recipe *r, svec *out); /* name, then the splits */
+bool recipe_is_main(const recipe *r, const char *output);
+bool split_isset(const recipe *r, const char *split, const char *field);
+const char *output_get(const recipe *r, const char *output, const char *field);
+void output_list(const recipe *r, const char *output, const char *field, svec *out);
 /* the prototype's recipe_reset as shell code, with RECIPE_FILE and RECIPE_DIR (for env.sh) */
 void recipe_reset_sh(const recipe *r, sbuf *s);
 /* regular files of the recipe directory (find -type f), sorted; with_recipe: the recipe too */

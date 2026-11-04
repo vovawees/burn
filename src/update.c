@@ -293,8 +293,13 @@ static void plan_changelog(const plan *p)
 		sv_push(&argv, "--no-decorate");
 		sv_pushf(&argv, "%s..HEAD", last);
 		sv_push(&argv, "--");
-		for (size_t j = 0; j < p->n; j++)
-			sv_pushf(&argv, "packages/%s", p->e[j].name);
+		for (size_t j = 0; j < p->n; j++) {
+			/* a split package changes with the directory of its recipe */
+			char *rp = recipe_path(p->e[j].name), *rd = rp ? path_dir(rp) : NULL;
+			sv_pushf(&argv, "packages/%s", rd ? path_base(rd) : p->e[j].name);
+			free(rd);
+			free(rp);
+		}
 		sbuf out = SBUF_INIT;
 		run_opts o = {.out = &out, .quiet = true};
 		run(sv_argv(&argv), &o);

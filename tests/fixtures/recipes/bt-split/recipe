@@ -1,0 +1,32 @@
+name=bt-split
+version=1.0
+release=1
+summary="a program whose library and data are split packages"
+homepage=https://example.org/bt-split
+license=(MIT)
+category=extra
+build_type=custom
+depends=(bt-split-libs)
+source=(btsplit.c)
+sha256=(SKIP)
+split=(bt-split-libs bt-split-data)
+summary_bt_split_libs="the shared library of bt-split"
+# the second pattern matches nothing: a warning, like a file one architecture does not build
+files_bt_split_libs=('usr/lib/libbtsplit.so.*' 'usr/lib/nothing-here.so.*')
+summary_bt_split_data="the data files of bt-split"
+license_bt_split_data=(CC0-1.0)
+depends_bt_split_data=(bt-split)
+files_bt_split_data=(usr/share/bt-split)
+
+do_build() {
+	$CC $CFLAGS -fPIC -shared -DLIB -Wl,-soname,libbtsplit.so.1 $LDFLAGS -o libbtsplit.so.1 "$FILES/btsplit.c"
+	$CC $CFLAGS $LDFLAGS -o btsplit "$FILES/btsplit.c" ./libbtsplit.so.1
+}
+
+do_install() {
+	install -Dm755 libbtsplit.so.1 "$DESTDIR/usr/lib/libbtsplit.so.1"
+	ln -s libbtsplit.so.1 "$DESTDIR/usr/lib/libbtsplit.so"
+	install -Dm755 btsplit "$DESTDIR/usr/bin/btsplit"
+	mkdir -p "$DESTDIR/usr/share/bt-split/levels"
+	echo 'level one' >"$DESTDIR/usr/share/bt-split/levels/1.txt"
+}

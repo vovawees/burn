@@ -96,6 +96,40 @@ version=$_basever.${#_patches[@]}
 patches=("${_patches[@]/#/bash${_basever/./}-}")
 ```
 
+### Split-пакеты
+
+Одна сборка может дать несколько пакетов: `split=(имя…)` перечисляет дополнительные пакеты рецепта. Каждый
+забирает из `DESTDIR` то, что совпало с его шаблонами, и имеет свои метаданные; переменные split-пакета
+называются по его имени, где каждый символ вне `[A-Za-z0-9_]` заменён на `_`:
+
+```sh
+name=gcc
+depends=(glibc binutils gcc-libs zlib-ng zstd)   # компилятору нужны его библиотеки
+split=(gcc-libs)
+summary_gcc_libs="GCC runtime libraries: libgcc_s, libstdc++, libatomic, libgomp"
+depends_gcc_libs=(glibc)
+files_gcc_libs=(usr/lib/libgcc_s.so.1 'usr/lib/libstdc++.so.6' 'usr/lib/libstdc++.so.6.*[0-9]')
+```
+
+- `files_КЛЮЧ` (обязателен) — шаблоны glob относительно `DESTDIR` (в кавычках: язык рецептов не раскрывает
+  пути); совпавшие файлы и каталоги целиком переезжают в пакет после чистки (шаг 4 сборки). Шаблон без
+  совпадений — предупреждение (такой файл может не собираться на другой архитектуре), split без единого
+  файла — ошибка;
+- `summary_КЛЮЧ` (обязателен), `depends_КЛЮЧ`, `backup_КЛЮЧ`; `license_КЛЮЧ` — если не задан, лицензия
+  рецепта; версия, release, особенности, `rid` и `buildid` — общие для всех пакетов рецепта;
+- имя split-пакета работает везде, где имя рецепта: `install`, `info` (`split of`), `search`, `query`
+  (`summary`, `depends`, `license`, `backup`, `files` — свои), зависимости других рецептов. Чтобы его собрать,
+  нужно то же, что рецепту (его `depends` и `makedepends`), а свои пакеты рецепту для сборки не нужны никогда —
+  ни в порядке сборки, ни в `buildid`;
+- в `meta` split-пакета есть `base=<рецепт>`. Файлы переходят между пакетами одного рецепта при обновлении без
+  конфликта (новый владелец забирает их у старого: `gcc-libs takes over N file(s) from gcc`), а SONAME, который
+  ушёл из одного пакета, но есть в другом установленном, не считается потерянным — пересборки нет;
+- `update` собирает рецепт один раз и ставит все его установленные пакеты; `--rebuild` и ABI-пересборка тоже
+  собирают его один раз за команду.
+
+`lint` проверяет имена split-пакетов (не совпадают с рецептом и с другими рецептами), `files_` и `summary_`,
+зависимости `depends_`.
+
 ## Конфиг и профили
 
 Порядок: значения по умолчанию → `$ROOT/etc/burn/burn.conf` → `-c FILE` (`$BURN_CONFIG`) → профиль → снова
@@ -204,8 +238,9 @@ SPIN_USER_SERVICES=(pipewire wireplumber) # сервисы dinit --user, вкл�
    man и лишних локалей по `FEATURES`/`LOCALES` (кроме `!prune`), `strip` ELF пачками (кроме `!strip`; `.ko`,
    `.o` и `/usr/lib/debug` не трогаются), предупреждение про `.a` из одних LTO-объектов, без пустых каталогов
    (кроме `emptydirs`).
-5. **Пакет.** `.BURN/meta`, `files`, `provides-so`/`needs-so` (ELF разбирается в процессе), tar + zstd в
-   процессе во временный файл и `rename()`.
+5. **Пакет.** Split-пакеты забирают свои файлы (`files_КЛЮЧ`), опустевшие каталоги уходят; затем для
+   каждого пакета рецепта — `.BURN/meta`, `files`, `provides-so`/`needs-so` (ELF разбирается в процессе), tar
+   + zstd в процессе во временный файл и `rename()`. В кеше сборка есть, только если есть все её пакеты.
 
 `burn unpack <пакет> [каталог]` — шаг 2 и `do_prepare`: исходники для правки или для bootstrap.
 
@@ -267,8 +302,8 @@ SONAME, с которым слинкованы другие пакеты, ста
 
 ```
 $ROOT/var/lib/burn/installed/<имя>/
-  meta          key=value: name version release arch chost buildid rid profile summary license
-                depends features backup cflags ldflags builddate
+  meta          key=value: name version release arch chost [base] buildid rid profile summary
+                license depends features backup cflags ldflags builddate (base — у split-пакетов)
   files         пути без ведущего '/', каталоги с '/' в конце, побайтная сортировка
   provides-so   SONAME, которые даёт пакет
   needs-so      SONAME, которые ему нужны и которых он не даёт сам

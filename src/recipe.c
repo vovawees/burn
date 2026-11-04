@@ -16,7 +16,7 @@ const char *const RECIPE_VARS[] = {
 	"category",    "source",     "sha256",         "build_type",  "srcdir",       "depends",
 	"makedepends", "features",   "patches",        "patch_strip", "options",      "backup",
 	"noextract",   "configure_args", "meson_args", "cmake_args",  "make_args",    "make_install_args",
-	"cargo_args",  "out_of_tree", "meson_subdir",  "cmake_subdir", "cflags_append", NULL};
+	"cargo_args",  "out_of_tree", "meson_subdir",  "cmake_subdir", "cflags_append", "split", NULL};
 /* category = layer of the base; 'extra' is for spin and user overlays */
 const char *const RECIPE_CATEGORIES[] = {"core",     "devel",   "meta",     "kernel", "firmware",
 					 "drivers",  "platform", "extra",   NULL};
@@ -27,7 +27,7 @@ const char *const RECIPE_OPTIONS[] = {"!lto",       "!strip",    "!hardening", "
 static const char *const ARRAY_VARS[] = {"license",   "source",         "sha256",     "depends",    "makedepends",
 					 "features",  "patches",        "options",    "backup",     "noextract",
 					 "configure_args", "meson_args", "cmake_args", "make_args", "make_install_args",
-					 "cargo_args", NULL};
+					 "cargo_args", "split", NULL};
 static const char *const SCALAR_DEFAULTS[][2] = {
 	{"name", ""},         {"version", ""},     {"release", "1"},     {"summary", ""},
 	{"homepage", ""},     {"category", ""},    {"build_type", "autotools"}, {"srcdir", ""},
@@ -67,6 +67,8 @@ void recipe_dirs(svec *out)
 	free(pat);
 }
 
+static char *split_owner(const char *what);
+
 char *recipe_path(const char *what)
 {
 	if (strchr(what, '/')) {
@@ -90,7 +92,7 @@ char *recipe_path(const char *what)
 			free(p);
 	}
 	sv_free(&dirs);
-	return found;
+	return found ? found : split_owner(what);
 }
 
 void recipe_names(svec *out)
@@ -187,6 +189,9 @@ recipe *recipe_try_load(const char *what, char **err)
 		recipe_free(r);
 		return NULL;
 	}
+	/* a split package loads the recipe that builds it */
+	bool split = !strchr(what, '/') && strcmp(what, rget(r, "name")) && recipe_has_split(r, what);
+	r->output = xstrdup(split ? what : rget(r, "name"));
 	return r;
 }
 
@@ -208,6 +213,7 @@ void recipe_free(recipe *r)
 	free(r->feat);
 	sh_free(&r->env);
 	sv_free(&r->funcs);
+	free(r->output);
 	free(r->file);
 	free(r->dir);
 	free(r);
@@ -231,6 +237,127 @@ bool rhas_option(const recipe *r, const char *opt)
 	bool has = sv_has(&o, opt);
 	sv_free(&o);
 	return has;
+}
+
+/* ======================================================================= split packages */
+
+/* split=(NAME...): one build, more packages. Each split takes the files of DESTDIR its
+ * files_KEY patterns match and has its own summary_KEY, depends_KEY, backup_KEY and
+ * license_KEY (the recipe's when unset); KEY is NAME with '_' for every character outside
+ * [A-Za-z0-9_]: gcc-libs -> files_gcc_libs. */
+char *split_key(const char *name)
+{
+	char *k = xstrdup(name);
+	for (char *p = k; *p; p++)
+		if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_'))
+			*p = '_';
+	return k;
+}
+
+bool recipe_has_split(const recipe *r, const char *name)
+{
+	svec s = SVEC_INIT;
+	rlist(r, "split", &s);
+	bool has = sv_has(&s, name);
+	sv_free(&s);
+	return has;
+}
+
+void recipe_outputs(const recipe *r, svec *out)
+{
+	sv_push(out, rget(r, "name"));
+	rlist(r, "split", out);
+}
+
+bool recipe_is_main(const recipe *r, const char *output)
+{
+	return !strcmp(output, rget(r, "name"));
+}
+
+static char *split_var(const char *field, const char *split)
+{
+	char *k = split_key(split);
+	char *v = xasprintf("%s_%s", field, k);
+	free(k);
+	return v;
+}
+
+bool split_isset(const recipe *r, const char *split, const char *field)
+{
+	char *v = split_var(field, split);
+	const shvar *sv = sh_find(&r->env, v);
+	free(v);
+	return sv != NULL;
+}
+
+/* FIELD of the package OUTPUT: the recipe's own for the main package, FIELD_KEY for a split
+ * (license falls back to the recipe's) */
+const char *output_get(const recipe *r, const char *output, const char *field)
+{
+	if (recipe_is_main(r, output))
+		return rget(r, field);
+	char *v = split_var(field, output);
+	const char *s = sh_get(&r->env, v);
+	free(v);
+	return s ? s : "";
+}
+
+void output_list(const recipe *r, const char *output, const char *field, svec *out)
+{
+	if (recipe_is_main(r, output) || (!strcmp(field, "license") && !split_isset(r, output, field))) {
+		rlist(r, field, out);
+		return;
+	}
+	char *v = split_var(field, output);
+	rlist(r, v, out);
+	free(v);
+}
+
+/* the recipe that builds WHAT as a split package (the first recipe of each name counts, like
+ * recipe_path); found ones are remembered */
+static char *split_owner(const char *what)
+{
+	static strmap known = STRMAP_INIT;
+	static svec paths = SVEC_INIT;
+	size_t at;
+	if (sm_get(&known, what, &at) && is_file(paths.v[at]))
+		return xstrdup(paths.v[at]);
+	svec dirs = SVEC_INIT;
+	strmap seen = STRMAP_INIT;
+	char *found = NULL;
+	recipe_dirs(&dirs);
+	for (size_t i = 0; i < dirs.n && !found; i++) {
+		char *pat = xasprintf("%s/*/recipe", dirs.v[i]);
+		glob_t g;
+		if (glob(pat, 0, NULL, &g) == 0) {
+			for (size_t k = 0; k < g.gl_pathc && !found; k++) {
+				char *d = path_dir(g.gl_pathv[k]);
+				bool first = !sm_has(&seen, path_base(d));
+				sm_put(&seen, path_base(d), 0);
+				free(d);
+				size_t len;
+				char *text = first ? file_read(g.gl_pathv[k], &len) : NULL;
+				if (text && strstr(text, "split") && strstr(text, what)) {
+					char *err = NULL;
+					recipe *r = recipe_try_load(g.gl_pathv[k], &err);
+					if (r && recipe_has_split(r, what))
+						found = xstrdup(r->file);
+					recipe_free(r);
+					free(err);
+				}
+				free(text);
+			}
+			globfree(&g);
+		}
+		free(pat);
+	}
+	sm_free(&seen);
+	sv_free(&dirs);
+	if (found) {
+		sm_put(&known, what, paths.n);
+		sv_push(&paths, found);
+	}
+	return found;
 }
 
 /* ======================================================================= features */

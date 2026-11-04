@@ -459,13 +459,16 @@ static char *recipe_buildid(build *b)
 	sb_addf(&s, "%s%s%s%s %s\n", bget(b, "KEEP_DOCS"), bget(b, "KEEP_INFO"), bget(b, "KEEP_MAN"),
 		bget(b, "STRIP_BINARIES"), bget(b, "LOCALES"));
 	profile_vars_id(r, &s);
-	svec deps = SVEC_INIT, act = SVEC_INIT;
+	svec deps = SVEC_INIT, act = SVEC_INIT, outputs = SVEC_INIT;
 	rlist(r, "depends", &deps);
 	deps_active(r, &deps, &act);
+	recipe_outputs(r, &outputs); /* its own split packages are made by this very build */
 	for (size_t i = 0; i < act.n; i++) {
 		svec words = SVEC_INIT;
 		sv_split_ws(&words, act.v[i]);
 		for (size_t w = 0; w < words.n; w++) {
+			if (sv_has(&outputs, words.v[w]))
+				continue;
 			char *f = db_path(words.v[w], "provides-so");
 			if (is_file(f)) {
 				svec so = SVEC_INIT;
@@ -481,6 +484,7 @@ static char *recipe_buildid(build *b)
 	}
 	sv_free(&deps);
 	sv_free(&act);
+	sv_free(&outputs);
 	sha256_update(&c, s.s, s.len);
 	char hex[65];
 	sha256_final_hex(&c, hex);
