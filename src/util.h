@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-#define BURN_VERSION "0.7.0"
+#define BURN_VERSION "0.8.0"
 
 #define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))
 #define PRINTF(a, b) __attribute__((format(printf, a, b)))
