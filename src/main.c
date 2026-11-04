@@ -32,6 +32,7 @@ static void usage(FILE *f)
 	      "  hold|unhold [pkg]...        pin packages (update skips them); no args: list holds\n"
 	      "  history                     show the transaction log\n"
 	      "  rollback <pkg>              reinstall the previous build of a package and hold it\n"
+	      "  clone [/source] [pkg]...    install the builds of another root (default /) from the cache\n"
 	      "  doctor                      check the system (missing and preserved libraries)\n"
 	      "  lint [pkg|dir]...           check recipes\n"
 	      "  checksum <pkg>              print the sha256 of the sources (--write: into the recipe)\n"
@@ -70,6 +71,7 @@ static const command commands[] = {
 	{"profile", cmd_profile}, {"list", cmd_list},     {"files", cmd_files},   {"owner", cmd_owner},
 	{"hold", cmd_hold},     {"unhold", cmd_unhold},   {"history", cmd_history}, {"doctor", cmd_doctor},
 	{"install", cmd_install}, {"remove", cmd_remove}, {"uninstall", cmd_remove}, {"rollback", cmd_rollback},
+	{"clone", cmd_clone},
 	{"fetch", cmd_fetch},   {"checksum", cmd_checksum}, {"build", cmd_build},   {"unpack", cmd_unpack},
 	{"sync", cmd_sync},     {"plan", cmd_plan},       {"update", cmd_update}, {"upgrade", cmd_update},
 	{"snapshot", cmd_snapshot},

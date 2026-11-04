@@ -123,6 +123,30 @@ if command -v zstd >/dev/null && tar --version 2>/dev/null | grep -q GNU; then
 	[ "$(wc -l <"$tmp/root/triggered")" -eq 1 ] || fail "trigger: unrelated paths do not run it"
 	b -y remove kern 2>/dev/null || fail "remove kern"
 	[ "$(wc -l <"$tmp/root/triggered")" -eq 2 ] || fail "trigger: removals run it"
+	# clone: the builds another root has installed, from the package cache, nothing built
+	mkdir -p "$tmp/ccache/packages" "$tmp/clone" "$tmp/clone1"
+	mkdir -p "$tmp/dest/usr/bin" && echo dep >"$tmp/dest/usr/bin/dep"
+	mkpkg dep 1 '' '' ''
+	mkdir -p "$tmp/dest/usr/bin" && echo top >"$tmp/dest/usr/bin/top"
+	mkpkg top 1 '' '' dep
+	b install "$pkgs/dep-1.pkg.tar.zst" "$pkgs/top-1.pkg.tar.zst" 2>/dev/null || fail "install dep top"
+	rm -r "$db/zstd" # hand-written above: no cache file for it
+	for p in trig other dep top; do cp "$pkgs/$p-1.pkg.tar.zst" "$tmp/ccache/packages/$p-1-1-x86_64-b1.pkg.tar.zst"; done
+	c() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/ccache" NO_COLOR=1 "$BURN" "$@"; }
+	c -r "$tmp/clone" -y clone "$tmp/root" 2>"$tmp/err" || fail "clone: $(cat "$tmp/err")"
+	[ "$(c -r "$tmp/clone" list | awk '{print $1}' | tr '\n' ' ')" = "dep other top trig " ] || fail "clone: all packages"
+	[ "$(cat "$tmp/clone/usr/bin/top")" = top ] || fail "clone: contents"
+	c -r "$tmp/clone1" -y clone "$tmp/root" top 2>"$tmp/err" || fail "clone top: $(cat "$tmp/err")"
+	[ "$(c -r "$tmp/clone1" list | awk '{print $1}' | tr '\n' ' ')" = "dep top " ] || fail "clone: a package and its dependencies"
+	grep -q 'Packages (2): dep top' "$tmp/err" || fail "clone: dependency order: $(cat "$tmp/err")"
+	if c -r "$tmp/root" -y clone "$tmp/root" 2>"$tmp/err"; then fail "clone: into itself"; fi
+	grep -q 'is the target root itself' "$tmp/err" || fail "clone: same root message"
+	if c -r "$tmp/clone1" -y clone "$tmp/root" nosuch 2>"$tmp/err"; then fail "clone: unknown package"; fi
+	grep -q 'nosuch is not installed in' "$tmp/err" || fail "clone: unknown package message"
+	rm "$tmp/ccache/packages/dep-1-1-x86_64-b1.pkg.tar.zst"
+	if c -r "$tmp/clone2" -y clone "$tmp/root" top 2>"$tmp/err"; then fail "clone: missing package file"; fi
+	grep -q '1 package file(s) missing' "$tmp/err" || fail "clone: missing message: $(cat "$tmp/err")"
+	[ ! -e "$tmp/clone2/usr/bin/top" ] || fail "clone: nothing installed when a file is missing"
 fi
 # sources: parallel downloads from a mirror, sha256 inside burn
 if command -v curl >/dev/null || command -v wget >/dev/null; then

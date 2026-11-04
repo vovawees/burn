@@ -210,3 +210,98 @@ int cmd_rollback(int argc, char **argv)
 	free(hist);
 	return 0;
 }
+
+/* clone [/SOURCE] [pkg...]: install into the root the very builds that SOURCE (a path; default /)
+ * has installed, straight from the package cache and without building anything: an installer
+ * copies the running system this way. With names, only those packages and what they depend on. */
+int cmd_clone(int argc, char **argv)
+{
+	const char *from = "/";
+	svec want = SVEC_INIT;
+	for (int i = 0; i < argc; i++) {
+		if (strchr(argv[i], '/'))
+			from = argv[i];
+		else
+			sv_push(&want, argv[i]);
+	}
+	need_write();
+	char *src_root = path_real(from);
+	if (!src_root)
+		die("no such root: %s", from);
+	char *src_db = path_join(strcmp(src_root, "/") ? src_root : "", "var/lib/burn/installed");
+	char *a = path_real(src_db), *b = path_real(B.db_dir);
+	if (!a)
+		die("%s has no burn database (%s)", from, src_db);
+	if (b && !strcmp(a, b))
+		die("clone: %s is the target root itself", from);
+	free(a);
+	free(b);
+
+	/* read the source database: which packages, in dependency order, and their cache files */
+	char *saved = B.db_dir;
+	B.db_dir = src_db;
+	svec names = SVEC_INIT;
+	if (want.n) {
+		/* the closure of WANT over the installed dependencies */
+		for (size_t i = 0; i < want.n; i++) {
+			if (!db_has(want.v[i]))
+				die("%s is not installed in %s", want.v[i], from);
+			sv_push(&names, want.v[i]);
+		}
+		for (size_t i = 0; i < names.n; i++) {
+			char *deps = db_get(names.v[i], "depends");
+			svec d = SVEC_INIT;
+			sv_split_ws(&d, deps ? deps : "");
+			for (size_t j = 0; j < d.n; j++)
+				if (db_has(d.v[j]) && sv_index(&names, d.v[j]) < 0)
+					sv_push(&names, d.v[j]);
+			sv_free(&d);
+			free(deps);
+		}
+	} else {
+		db_list(&names);
+	}
+	if (!names.n)
+		die("nothing installed in %s", from);
+	svec order = SVEC_INIT, files = SVEC_INIT, missing = SVEC_INIT;
+	strmap seen = STRMAP_INIT;
+	for (size_t i = 0; i < names.n; i++)
+		db_order(&names, i, &seen, &order);
+	for (size_t i = 0; i < order.n; i++) {
+		svec m = SVEC_INIT;
+		db_lines(order.v[i], "meta", &m);
+		char *f = xasprintf("%s/packages/%s-%s-%s-%s-%s.pkg.tar.zst", cfg("CACHE_DIR"), order.v[i],
+				    meta_get(&m, "version"), meta_get(&m, "release"), meta_get(&m, "arch"),
+				    meta_get(&m, "buildid"));
+		if (is_file(f))
+			sv_push_own(&files, f);
+		else {
+			sv_push_own(&missing, f);
+		}
+		sv_free(&m);
+	}
+	B.db_dir = saved;
+	if (missing.n) {
+		for (size_t i = 0; i < missing.n; i++)
+			warn("not in the package cache: %s", missing.v[i]);
+		die("clone: %zu package file(s) missing (BURN_CACHE=%s)", missing.n, cfg("CACHE_DIR"));
+	}
+	char *all = sv_join(&order, " ");
+	msg("Packages (%zu): %s", order.n, all);
+	free(all);
+	if (!confirm("Install these builds?"))
+		die("aborted, nothing changed");
+	for (size_t i = 0; i < files.n; i++)
+		pkg_install_file(files.v[i], NULL);
+	preserved_cleanup();
+	triggers_run();
+	sm_free(&seen);
+	sv_free(&order);
+	sv_free(&files);
+	sv_free(&missing);
+	sv_free(&names);
+	sv_free(&want);
+	free(src_db);
+	free(src_root);
+	return 0;
+}

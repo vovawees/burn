@@ -41,7 +41,7 @@
 | `src/buildtype.c` | типы сборки (autotools, make, cmake, meson, cargo, python, meta, custom) — сам burn, без bash |
 | `src/shrun.c` | функции рецепта: `env.sh` для bash, вызов `do_*`, `*_extra`, `post_install` |
 | `src/prelude.sh` | вводная часть для функций рецепта (`use`, `use_enable`, `bt_*`, …), встроена в бинарник |
-| `src/cmd_pkg.c` | `install <файл>` и `install <рецепт>` (сборка по зависимостям, ABI-пересборка), `remove`, `rollback` |
+| `src/cmd_pkg.c` | `install <файл>` и `install <рецепт>` (сборка по зависимостям, ABI-пересборка), `remove`, `rollback`, `clone` (сборки другого корня из кэша: порядок по зависимостям из его базы) |
 | `src/update.c` | `sync`, `plan`, `update`: репозитории рецептов, план, сборка всего до применения, хуки, состояние |
 | `src/snapshot.c` | снимок btrfs перед `update` и `burn snapshot`: ioctl ядра, без btrfs-progs |
 | `src/main.c` | командная строка |
