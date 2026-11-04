@@ -486,7 +486,8 @@ if command -v cc >/dev/null 2>&1; then
 		'	mkdir -p "$DESTDIR/usr/share/pg"' '	echo "$CFLAGS" >"$DESTDIR/usr/share/pg/cflags"' \
 		'	n=0' '	[ -z "${PGO_DIR-}" ] || n=$(find "$PGO_DIR" -name "*.gcda" | wc -l)' '	echo "$n" >"$DESTDIR/usr/share/pg/gcda"' \
 		'}' >"$tmp/pgrec/pg/recipe"
-	pg() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/pgcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	# CC= : the compiler of the test run (make check CC=clang) must not leak into the GCC case
+	pg() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/pgcache" HOST_VIDEO_CARDS= NO_COLOR=1 CC= CXX= "$BURN" \
 		-r "$tmp/pgroot" -R "$tmp/pgrec" --host-deps -y "$@"; }
 	pg install pg >"$tmp/pg.log" 2>&1 || fail "pgo: off: $(cat "$tmp/pg.log")"
 	if grep -q 'profile' "$tmp/pgroot/usr/share/pg/cflags"; then fail "pgo: PGO=0 builds as usual"; fi
