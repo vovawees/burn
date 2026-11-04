@@ -323,6 +323,12 @@ static int meson(bt_ctx *b, const char *phase)
 		env_unset(&env, "CFLAGS");
 		env_unset(&env, "CXXFLAGS");
 		env_unset(&env, "LDFLAGS");
+		/* the cross file has the sysroot and the pkg-config dirs of the host machine; in the
+		 * environment they would be those of the build machine too, whose lookups (native: true,
+		 * wayland-scanner, say) take its own dirs and PKG_CONFIG_PATH_FOR_BUILD */
+		env_unset(&env, "PKG_CONFIG_SYSROOT_DIR");
+		env_unset(&env, "PKG_CONFIG_LIBDIR");
+		env_unset(&env, "PKG_CONFIG_PATH");
 	}
 	push_list(b, &argv, "meson_args");
 	sv_extend(&argv, &extra);

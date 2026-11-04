@@ -519,6 +519,28 @@ if command -v openssl >/dev/null 2>&1; then
 	grep -q 'sha256 mismatch' "$tmp/sg.log" && grep -q 'Building sg' "$tmp/sg.log" ||
 		fail "binary cache: a bad signature must be refused: $(cat "$tmp/sg.log")"
 fi
+# meson cross builds: the host machine's sysroot and pkg-config dirs are in the cross file, the
+# environment of meson keeps the build machine's (PKG_CONFIG_PATH_FOR_BUILD, its default dirs)
+mx=$tmp/mx mxa=$(uname -m)
+mkdir -p "$mx/bin" "$mx/rec/mx" "$mx/out"
+for t in gcc g++ ld as ar nm ranlib strip objcopy objdump readelf; do
+	printf '#!/bin/sh\nexec %s "$@"\n' "$t" >"$mx/bin/$mxa-mx-linux-gnu-$t"
+	chmod +x "$mx/bin/$mxa-mx-linux-gnu-$t"
+done
+# shellcheck disable=SC2016 # the fake meson expands these
+printf '%s\n' '#!/bin/sh' '[ "$1" = setup ] || exit 0' 'env | grep "^PKG_CONFIG" | sort >"$MX_OUT/env"' \
+	'while [ $# -gt 0 ]; do [ "$1" = --cross-file ] && cp "$2" "$MX_OUT/cross.ini"; shift; done' >"$mx/bin/meson"
+chmod +x "$mx/bin/meson"
+printf '%s\n' 'name=mx' 'version=1' 'release=1' 'summary="meson cross"' 'homepage=https://example.org/mx' \
+	'license=(MIT)' 'category=extra' 'build_type=meson' >"$mx/rec/mx/recipe"
+env PATH="$mx/bin:$PATH" MX_OUT="$mx/out" PKG_CONFIG_PATH_FOR_BUILD=/opt/native/lib/pkgconfig \
+	BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$mx/cache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$mx/root" -R "$mx/rec" --target "$mxa-mx-linux-gnu" build mx >"$mx/log" 2>&1 || true
+[ -f "$mx/out/env" ] || fail "meson cross: setup did not run: $(cat "$mx/log")"
+grep -q "^sys_root = '$mx/root'" "$mx/out/cross.ini" || fail "meson cross: sys_root: $(cat "$mx/out/cross.ini")"
+grep -q "^pkg_config_libdir = '$mx/root/usr/lib/pkgconfig:" "$mx/out/cross.ini" || fail "meson cross: pkg_config_libdir"
+[ "$(cat "$mx/out/env")" = 'PKG_CONFIG_PATH_FOR_BUILD=/opt/native/lib/pkgconfig' ] ||
+	fail "meson cross: environment: $(cat "$mx/out/env")"
 # helpers of recipe functions still reach the running burn
 mkdir -p "$tmp/self/selfdel"
 cp "$BURN" "$tmp/burn-copy"
