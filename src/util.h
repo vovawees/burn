@@ -36,7 +36,7 @@ void *xrealloc(void *p, size_t n);
 char *xstrdup(const char *s);
 char *xstrndup(const char *s, size_t n);
 char *xasprintf(const char *fmt, ...) PRINTF(1, 2);
-char *xvasprintf(const char *fmt, va_list ap);
+char *xvasprintf(const char *fmt, va_list ap) PRINTF(1, 0);
 
 /* ---- growable string ---- */
 typedef struct {

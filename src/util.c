@@ -33,7 +33,7 @@ void log_init(void)
 }
 
 /* one write per line, so parallel jobs never interleave inside a message */
-static void vout(const char *pre, const char *post, const char *fmt, va_list ap)
+static PRINTF(3, 0) void vout(const char *pre, const char *post, const char *fmt, va_list ap)
 {
 	char *m = xvasprintf(fmt, ap);
 	char *line = xasprintf("%s%s%s\n", pre, m, post);
