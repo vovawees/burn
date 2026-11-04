@@ -62,6 +62,23 @@ static void test_sha256(void)
 	}
 	sha256_final_hex(&c, h);
 	CHECK_STR(h, "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+	/* every length up to 299 bytes (one call each, so several whole blocks at once): the digests
+	 * hashed again, the value from Python's hashlib */
+	sha256_ctx outer;
+	sha256_init(&outer);
+	for (size_t n = 0; n < 300; n++) {
+		uint8_t buf[300], d[32];
+		for (size_t i = 0; i < n; i++)
+			buf[i] = (uint8_t)(i * 31 + n);
+		sha256_init(&c);
+		sha256_update(&c, buf, n);
+		sha256_final(&c, d);
+		sha256_update(&outer, d, sizeof d);
+	}
+	sha256_final_hex(&outer, h);
+	CHECK_STR(h, "148b894486945a24e834868db010090f61da189d018f0bf543b188081480175d");
+	if (getenv("BURN_TEST_VERBOSE"))
+		fprintf(stderr, "sha256: %s\n", sha256_impl());
 }
 
 static void test_vercmp(void)

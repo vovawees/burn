@@ -60,6 +60,8 @@ git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/Clean
 | снимок btrfs перед обновлением через ioctl (без btrfs-progs; у прототипа был хуком) | `snapshot` | ✅ |
 | split-пакеты: одна сборка — несколько пакетов (`split=(gcc-libs)`, `files_gcc_libs=(…)`), каждый ставится сам по себе, файлы переходят между пакетами рецепта при обновлении | `install`, `info`, `search`, `lint` | ✅ |
 | сборки (spins): репозиторий или каталог со `spin.conf` и своими рецептами — пакеты, особенности и сервисы сборки ставятся, обновляются (`sync`, `update`) и удаляются через burn | `spin add`, `spin remove`, `spin list`, `spin show` | ✅ |
+| `VIDEO_CARDS` профиля включает особенности `video_cards_<карта>` рецепта (как USE_EXPAND в Gentoo): зависимость может идти за GPU — `llvm:video_cards_intel` | `query`, `build` | ✅ |
+| SHA-256 на SHA-NI (x86-64, выбор по cpuid) | `fetch`, `checksum`, `build` | ✅ |
 
 C-версия и прототип работают с одной и той же базой и одним кэшем пакетов, так что их можно чередовать
 (сборки знает только C-версия).

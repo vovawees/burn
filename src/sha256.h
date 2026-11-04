@@ -18,5 +18,7 @@ void sha256_update(sha256_ctx *c, const void *data, size_t len);
 void sha256_final(sha256_ctx *c, uint8_t out[32]);
 void sha256_final_hex(sha256_ctx *c, char out[65]);
 int sha256_file(const char *path, char out[65]); /* 0, or -1 with errno */
+/* "sha-ni" or "c": the block function this CPU uses */
+const char *sha256_impl(void);
 
 #endif
