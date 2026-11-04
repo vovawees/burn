@@ -5,6 +5,7 @@
  *   files        every path of the package relative to the root, directories end with '/'
  *   provides-so  the SONAMEs it ships, needs-so the ones it links against, preserved: old
  *                libraries kept for other packages.
+ *   backup-sums  "SHA256 PATH": what each backup=() file held in this version (untouched or changed)
  * Plus $ROOT/etc/burn/hold and $ROOT/var/lib/burn/state/history.
  */
 #include "burn.h"

@@ -369,6 +369,30 @@ hd --host-deps -y install hd-app >"$tmp/hd.log" 2>&1 || fail "host-deps: install
 # a native build needs every makedepend in the root (they stay installed, as in Gentoo)
 hd -y install hd-app >"$tmp/hd.log" 2>&1 || fail "native: install: $(cat "$tmp/hd.log")"
 [ "$(hd list | awk '{print $1}' | tr '\n' ' ')" = "hd-app hd-corelib hd-proto hd-tool " ] || fail "native: every makedepend: $(hd list)"
+# backup=() files, three ways (as pacman): an untouched file takes the new default, a changed one
+# stays and the new default goes to .burnnew; removal saves only a changed file (.burnsave)
+mkdir -p "$tmp/bkrec/bk"
+bk_recipe() { # RELEASE: /etc/bk.conf says "default RELEASE"
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' 'name=bk' 'version=1' "release=$1" 'summary="backup files"' 'homepage=https://example.org/bk' \
+		'license=(MIT)' 'category=extra' 'build_type=custom' 'backup=(etc/bk.conf)' 'do_install() {' \
+		'	mkdir -p "$DESTDIR/etc"' "	echo 'default $1' >\"\$DESTDIR/etc/bk.conf\"" '}' >"$tmp/bkrec/bk/recipe"
+}
+bk() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/bkcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$tmp/bkroot" -R "$tmp/bkrec" -y "$@"; }
+bkc=$tmp/bkroot/etc/bk.conf
+bk_recipe 1 && bk install bk >/dev/null 2>&1 || fail "backup: install"
+grep -q ' etc/bk.conf$' "$tmp/bkroot/var/lib/burn/installed/bk/backup-sums" || fail "backup: backup-sums"
+bk_recipe 2 && bk --no-sync update >"$tmp/bk.log" 2>&1 || fail "backup: update: $(cat "$tmp/bk.log")"
+[ "$(cat "$bkc")" = 'default 2' ] && [ ! -e "$bkc.burnnew" ] || fail "backup: an untouched file takes the new default"
+echo mine >"$bkc"
+bk_recipe 3 && bk --no-sync update >"$tmp/bk.log" 2>&1 || fail "backup: update 3"
+[ "$(cat "$bkc")" = mine ] && [ "$(cat "$bkc.burnnew")" = 'default 3' ] || fail "backup: a changed file stays"
+grep -q 'kept your /etc/bk.conf' "$tmp/bk.log" || fail "backup: kept message"
+bk remove bk >/dev/null 2>&1 && [ "$(cat "$bkc.burnsave")" = mine ] || fail "backup: remove saves a changed file"
+rm -f "$bkc".*
+bk install bk >/dev/null 2>&1 && bk remove bk >/dev/null 2>&1 || fail "backup: install and remove"
+[ ! -e "$bkc" ] && [ ! -e "$bkc.burnsave" ] || fail "backup: an untouched file goes with the package"
 # helpers of recipe functions still reach the running burn
 mkdir -p "$tmp/self/selfdel"
 cp "$BURN" "$tmp/burn-copy"

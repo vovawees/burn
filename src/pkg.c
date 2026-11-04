@@ -9,6 +9,7 @@
  */
 #include "burn.h"
 #include "root.h"
+#include "sha256.h"
 #include "spawn.h"
 #include "tar.h"
 #include "vercmp.h"
@@ -557,9 +558,58 @@ static void stage_node(unpack *u, const tar_entry *e)
 	set_times(dfd, tmp, e->mtime);
 }
 
-/* phase 2: one rename per file. backup=() files that exist and differ stay; the new version
- * goes to NAME.burnnew next to them. */
-static void commit(unpack *u, const strmap *backup, strmap *kept)
+/* sha256 of what FD holds, from the start */
+static bool fd_sha256(int fd, char out[65])
+{
+	if (lseek(fd, 0, SEEK_SET) != 0)
+		return false;
+	sha256_ctx c;
+	sha256_init(&c);
+	static char buf[65536];
+	ssize_t n;
+	while ((n = read(fd, buf, sizeof buf)) > 0)
+		sha256_update(&c, buf, (size_t)n);
+	if (n < 0)
+		return false;
+	sha256_final_hex(&c, out);
+	return true;
+}
+
+/* sha256 of the file PATH of the root */
+static bool root_sha256(const char *path, char out[65])
+{
+	int fd = root_open(path, O_RDONLY | O_CLOEXEC, 0);
+	if (fd < 0)
+		return false;
+	bool ok = fd_sha256(fd, out);
+	close(fd);
+	return ok;
+}
+
+/* backup-sums of the db: "SHA256 PATH" lines, the content each backup=() file had in the
+ * installed version of the package */
+static void backup_sums_read(const char *name, strmap *idx, svec *sums)
+{
+	svec lines = SVEC_INIT;
+	if (db_has(name))
+		db_lines(name, "backup-sums", &lines);
+	for (size_t i = 0; i < lines.n; i++) {
+		char *sp = strchr(lines.v[i], ' ');
+		if (!sp || sp - lines.v[i] != 64)
+			continue;
+		*sp = 0;
+		sv_push(sums, lines.v[i]);
+		sm_put(idx, sp + 1, sums->n - 1);
+	}
+	sv_free(&lines);
+}
+
+/* phase 2: one rename per file. A backup=() file is replaced when it is the same as the new
+ * version or the same as the old one (the user did not change it: the new default comes in);
+ * a changed file stays, and the new version goes to NAME.burnnew next to it. SUMS gets the
+ * sha256 of every backup file of the new version (OLD: those of the installed one). */
+static void commit(unpack *u, const strmap *backup, strmap *kept, const strmap *old_idx,
+		   const svec *old_sums, sbuf *sums)
 {
 	for (size_t i = 0; i < u->nst; i++) {
 		staged *s = &u->st[i];
@@ -568,11 +618,17 @@ static void commit(unpack *u, const strmap *backup, strmap *kept)
 		if (dfd < 0)
 			die_errno("%s: cannot open the directory of /%s", u->pkg, s->path);
 		struct stat st;
-		if (s->type == TAR_FILE && sm_has(backup, s->path) && root_stat(s->path, &st)) {
+		if (s->type == TAR_FILE && sm_has(backup, s->path)) {
 			int fd = openat(dfd, s->tmp, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
-			bool same = fd >= 0 && root_same_content(s->path, fd);
+			char sum[65], disk[65];
+			if (fd >= 0 && fd_sha256(fd, sum))
+				sb_addf(sums, "%s %s\n", sum, s->path);
+			bool same = !root_stat(s->path, &st) || (fd >= 0 && root_same_content(s->path, fd));
 			if (fd >= 0)
 				close(fd);
+			size_t oi = 0;
+			if (!same && sm_get(old_idx, s->path, &oi) && root_sha256(s->path, disk))
+				same = !strcmp(disk, old_sums->v[oi]); /* untouched: the new default */
 			dfd = root_parent(s->path, &name);
 			if (!same) {
 				char *nn = xasprintf("%s.burnnew", name);
@@ -624,7 +680,7 @@ static void unpack_free(unpack *u)
 	sm_free(&u->index);
 }
 
-static void unpack_package(const char *name, const pkg_info *p, const svec *backups)
+static void unpack_package(const char *name, const pkg_info *p, const svec *backups, sbuf *sums)
 {
 	root_init();
 	unpack u = {.pkg = name, .as_root = geteuid() == 0};
@@ -665,7 +721,12 @@ static void unpack_package(const char *name, const pkg_info *p, const svec *back
 			sm_put(&bset, b, i);
 		free(b);
 	}
-	commit(&u, &bset, &kept);
+	strmap old_idx = STRMAP_INIT;
+	svec old_sums = SVEC_INIT;
+	backup_sums_read(name, &old_idx, &old_sums);
+	commit(&u, &bset, &kept, &old_idx, &old_sums, sums);
+	sm_free(&old_idx);
+	sv_free(&old_sums);
 	for (size_t i = 0; i < backups->n; i++) {
 		char *b = tar_normalize(backups->v[i]);
 		if (b && sm_has(&kept, b))
@@ -754,7 +815,8 @@ static void remove_obsolete(const svec *oldf, const svec *newf, svec *preserved)
 
 /* ---- the database entry ---- */
 
-static void db_replace(const char *name, const pkg_info *p, const sbuf *preserved, bool with_preserved)
+static void db_replace(const char *name, const pkg_info *p, const sbuf *preserved, bool with_preserved,
+		       const sbuf *sums)
 {
 	if (mkdir_p(B.db_dir, 0755) < 0)
 		die_errno("cannot create %s", B.db_dir);
@@ -772,6 +834,12 @@ static void db_replace(const char *name, const pkg_info *p, const sbuf *preserve
 			die_errno("cannot write %s", f);
 		struct timespec ts[2] = {{(time_t)p->burn[i].mtime, 0}, {(time_t)p->burn[i].mtime, 0}};
 		utimensat(AT_FDCWD, f, ts, 0); /* the times of the package, like cp -a */
+		free(f);
+	}
+	if (sums->len) {
+		char *f = xasprintf("%s/backup-sums", tmp);
+		if (file_write(f, sums->s, sums->len, 0644) < 0)
+			die_errno("cannot write %s", f);
 		free(f);
 	}
 	if (with_preserved) {
@@ -915,8 +983,9 @@ void pkg_install_file(const char *file, const char *op)
 	else
 		msg("Upgrading %s %s -> %s", name, old, ver);
 	svec backups = SVEC_INIT;
+	sbuf sums = SBUF_INIT;
 	sv_split_ws(&backups, meta_get(&p.meta, "backup"));
-	unpack_package(name, &p, &backups);
+	unpack_package(name, &p, &backups, &sums);
 	sv_free(&backups);
 
 	sbuf preserved = SBUF_INIT;
@@ -993,8 +1062,9 @@ void pkg_install_file(const char *file, const char *op)
 			close(fd);
 		}
 	}
-	db_replace(name, &p, &preserved, with_preserved);
+	db_replace(name, &p, &preserved, with_preserved, &sums);
 	sb_free(&preserved);
+	sb_free(&sums);
 	/* what this package installed is its own now: out of the lists of its sibling packages
 	 * (taken over) and of every package that kept an old copy as a preserved library */
 	{
@@ -1078,14 +1148,22 @@ void pkg_remove(const char *name)
 	char *ver = xasprintf("%s-%s", meta_get(&meta, "version"), meta_get(&meta, "release"));
 	msg("Removing %s %s", name, ver);
 	sv_split_ws(&backups, meta_get(&meta, "backup"));
+	strmap sum_idx = STRMAP_INIT;
+	svec sums = SVEC_INIT;
+	backup_sums_read(name, &sum_idx, &sums);
 	for (size_t i = 0; i < files.n; i++) {
 		const char *f = files.v[i];
 		struct stat st;
+		char disk[65];
+		size_t si = 0;
 		if (!*f)
 			continue;
+		/* a backup file the user changed is saved; an untouched one goes with the package */
+		bool changed = sv_has(&backups, f) && root_stat(f, &st) &&
+			       !(sm_get(&sum_idx, f, &si) && root_sha256(f, disk) && !strcmp(disk, sums.v[si]));
 		if (str_suffix(f, "/")) {
 			sv_push(&dirs, f);
-		} else if (sv_has(&backups, f) && root_stat(f, &st)) {
+		} else if (changed) {
 			char *save = xasprintf("%s.burnsave", f);
 			if (root_rename(f, save) < 0)
 				warn("cannot save /%s: %s", f, strerror(errno));
@@ -1119,6 +1197,8 @@ void pkg_remove(const char *name)
 	sv_free(&files);
 	sv_free(&backups);
 	sv_free(&dirs);
+	sm_free(&sum_idx);
+	sv_free(&sums);
 }
 
 /* ---- preserved libraries ---- */
