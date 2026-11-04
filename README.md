@@ -65,6 +65,7 @@ git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/Clean
 | SHA-256 на SHA-NI (x86-64, выбор по cpuid) | `fetch`, `checksum`, `build` | ✅ |
 | канал `security`: рецепт перечисляет закрытые уязвимости (`security=(CVE-…)`), `plan` их показывает, `--security` берёт только такие обновления | `plan`, `update`, `lint` | ✅ |
 | подписи пакетов (Ed25519 через `openssl`, доверенные ключи в `/etc/burn/keys`) и бинарный кеш своих машин (`BINARY_CACHES`): чужая сборка берётся только с верной подписью | `key`, `sign`, `verify`, `build`, `install` | ✅ |
+| `COMPILER=clang` (ThinLTO, `lld`, `options=(!clang)` для исключений) и PGO: `PGO=1` + `options=(pgo)` — инструментированная сборка, тренировка `do_pgo` (или `check`), сборка по профилю | `build`, `install` | ✅ |
 
 C-версия и прототип работают с одной и той же базой и одним кэшем пакетов, так что их можно чередовать
 (сборки знает только C-версия).

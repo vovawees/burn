@@ -112,6 +112,8 @@ void config_defaults(void)
 		{"CCACHE", "0"},
 		{"CCACHE_SIZE", "5G"},
 		{"LINKER", ""},
+		{"COMPILER", "gcc"},
+		{"PGO", "0"},
 		{"MESON_AUTO_FEATURES", "disabled"},
 		{"OPT_FLAGS", "-O2 -pipe"},
 		{"HARDENING_FLAGS", "-fstack-clash-protection -Wp,-D_FORTIFY_SOURCE=3"},

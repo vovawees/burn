@@ -112,6 +112,22 @@ static void toolchain_env(build *b)
 		bexport(b, tools[i][0], v);
 		free(v);
 	}
+	/* COMPILER=clang: native builds with clang and the LLVM binutils (llvm-ar for LTO archives) */
+	bset(b, "CLANG_ON", "0");
+	if (!strcmp(bget(b, "COMPILER"), "clang") && !rhas_option(b->r, "!clang")) {
+		if (cross)
+			die("COMPILER=clang: only native builds (the cross toolchain is GCC)");
+		if (!have("clang"))
+			die("COMPILER=clang: clang not found (burn install llvm)");
+		bset(b, "CLANG_ON", "1");
+		static const char *const llvm[][2] = {{"CC", "clang"}, {"CXX", "clang++"}, {"AR", "llvm-ar"},
+						      {"NM", "llvm-nm"}, {"RANLIB", "llvm-ranlib"}};
+		for (size_t i = 0; i < ARRAY_LEN(llvm); i++)
+			if (i < 2 || have(llvm[i][1]))
+				bexport(b, llvm[i][0], llvm[i][1]);
+	} else if (*bget(b, "COMPILER") && strcmp(bget(b, "COMPILER"), "gcc") && strcmp(bget(b, "COMPILER"), "clang")) {
+		die("COMPILER=%s: gcc or clang", bget(b, "COMPILER"));
+	}
 	if (cross) {
 		const char *sys = bget(b, "SYSROOT");
 		char *libdir = xasprintf("%s/usr/lib/pkgconfig:%s/usr/share/pkgconfig", sys, sys);
@@ -192,6 +208,9 @@ static char *ldflags_probe(build *b)
 static char *linker_flags(build *b)
 {
 	const char *linker = bget(b, "LINKER");
+	/* clang's LTO objects are LLVM bitcode: GNU ld would need the LLVM gold plugin */
+	if (!*linker && bon(b, "CLANG_ON") && bon(b, "LTO") && !rhas_option(b->r, "!lto"))
+		linker = "lld";
 	if (!*linker || rhas_option(b->r, "!linker"))
 		return xstrdup("");
 	static char *key, *flag;
@@ -314,7 +333,11 @@ static void flags_for_recipe(build *b)
 	free(probe);
 	free(lf);
 	bset(b, "LTO_ON", "0");
-	if (bon(b, "LTO") && !rhas_option(r, "!lto")) {
+	if (bon(b, "LTO") && !rhas_option(r, "!lto") && bon(b, "CLANG_ON")) {
+		bset(b, "LTO_ON", "1");
+		bappend(b, "CFLAGS", " -flto=thin");
+		bappend(b, "LDFLAGS", " -flto=thin");
+	} else if (bon(b, "LTO") && !rhas_option(r, "!lto")) {
 		bset(b, "LTO_ON", "1");
 		bappend(b, "CFLAGS", " -flto=auto");
 		bappend(b, "LDFLAGS", " -flto=auto");
@@ -497,6 +520,11 @@ static char *recipe_buildid(build *b)
 	char *rid = recipe_rid(r);
 	sbuf s = SBUF_INIT;
 	sb_addf(&s, "%s\n%s\n", rid, bget(b, "CHOST"));
+	/* only when on: the ids of GCC builds without PGO stay what they were */
+	if (bon(b, "CLANG_ON"))
+		sb_adds(&s, "compiler=clang\n");
+	if (cfg_on("PGO") && rhas_option(r, "pgo"))
+		sb_adds(&s, "pgo\n");
 	flags_id(&s, b, bget(b, "CFLAGS"));
 	flags_id(&s, b, bget(b, "CXXFLAGS"));
 	flags_id(&s, b, bget(b, "LDFLAGS"));

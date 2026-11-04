@@ -447,6 +447,39 @@ se_recipe se-a 3 'OSV-2026-26'
 se lint se-a 2>&1 | grep -q "bad advisory" && fail "security: lint: PREFIX-ID is an advisory: $(se lint se-a 2>&1)"
 se_recipe se-a 3 'cve-2026-1'
 se lint se-a 2>&1 | grep -q "bad advisory 'cve-2026-1'" || fail "security: lint: $(se lint se-a 2>&1)"
+# PGO=1 and options=(pgo): an instrumented build, the training (do_pgo), then the real build
+# with the profile; PGO is part of the build id
+if command -v cc >/dev/null 2>&1; then
+	mkdir -p "$tmp/pgrec/pg" "$tmp/pgroot/etc/burn"
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' 'name=pg' 'version=1' 'release=1' 'summary="pgo"' 'homepage=https://example.org/pg' \
+		'license=(MIT)' 'category=extra' 'build_type=custom' 'options=(pgo)' 'do_build() {' \
+		"	printf 'int main(int c, char **v) { int s = 0; for (int i = 0; i < 1000; i++) s += i %% (c + 1); return s < 0; }\\n' >hot.c" \
+		'	$CC $CFLAGS $LDFLAGS -o hot hot.c' '}' 'do_pgo() {' '	./hot' '}' 'do_install() {' \
+		'	mkdir -p "$DESTDIR/usr/share/pg"' '	echo "$CFLAGS" >"$DESTDIR/usr/share/pg/cflags"' \
+		'	n=0' '	[ -z "${PGO_DIR-}" ] || n=$(find "$PGO_DIR" -name "*.gcda" | wc -l)' '	echo "$n" >"$DESTDIR/usr/share/pg/gcda"' \
+		'}' >"$tmp/pgrec/pg/recipe"
+	pg() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/pgcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+		-r "$tmp/pgroot" -R "$tmp/pgrec" --host-deps -y "$@"; }
+	pg install pg >"$tmp/pg.log" 2>&1 || fail "pgo: off: $(cat "$tmp/pg.log")"
+	if grep -q 'profile' "$tmp/pgroot/usr/share/pg/cflags"; then fail "pgo: PGO=0 builds as usual"; fi
+	echo 'PGO=1' >"$tmp/pgroot/etc/burn/burn.conf"
+	pg remove pg >/dev/null 2>&1 && pg install pg >"$tmp/pg.log" 2>&1 || fail "pgo: build: $(cat "$tmp/pg.log")"
+	[ "$(find "$tmp/pgcache/packages" -name 'pg-1-1-*' | wc -l)" -eq 2 ] || fail "pgo: PGO is part of the build id"
+	grep -q 'pgo: training (do_pgo)' "$tmp/pg.log" || fail "pgo: no training: $(cat "$tmp/pg.log")"
+	grep -q -- '-fprofile-use=' "$tmp/pgroot/usr/share/pg/cflags" || fail "pgo: -fprofile-use: $(cat "$tmp/pgroot/usr/share/pg/cflags")"
+	[ "$(cat "$tmp/pgroot/usr/share/pg/gcda")" -ge 1 ] || fail "pgo: the training left no profile"
+	# COMPILER=clang: clang, ThinLTO, lld, a merged .profdata
+	if command -v clang >/dev/null 2>&1 && command -v llvm-profdata >/dev/null 2>&1 && command -v ld.lld >/dev/null 2>&1; then
+		printf 'PGO=1\nCOMPILER=clang\nLTO=1\n' >"$tmp/pgroot/etc/burn/burn.conf"
+		pg remove pg >/dev/null 2>&1 && pg install pg >"$tmp/pg.log" 2>&1 || fail "clang: build: $(cat "$tmp/pg.log")"
+		log=$(ls "$tmp"/pgcache/logs/pg-1-1.log)
+		grep -q '^# CHOST=.* CC=clang ' "$log" || fail "clang: CC: $(head -3 "$log")"
+		c=$(cat "$tmp/pgroot/usr/share/pg/cflags")
+		case $c in *-flto=thin*default.profdata*) ;; *) fail "clang: flags: $c" ;; esac
+		[ "$(find "$tmp/pgcache/packages" -name 'pg-1-1-*' | wc -l)" -eq 3 ] || fail "clang: part of the build id"
+	fi
+fi
 # signatures (Ed25519 through openssl) and the binary cache: a build of another machine is taken
 # only when a trusted key signed it; SIGNING_KEY signs every build
 if command -v openssl >/dev/null 2>&1; then

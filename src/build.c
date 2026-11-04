@@ -251,7 +251,7 @@ static void phase(build *b, const char *label, const char *fn, const char *type,
 	/* the one step that needs the network: cargo fetch --locked (checked against Cargo.lock);
 	 * burn unpack leaves the sources to the one who asked, also to root */
 	isolation one;
-	if (o.iso && type && !strcmp(label, "prepare") && !strcmp(type, "cargo")) {
+	if (o.iso && type && step && !strcmp(step, "prepare") && !strcmp(type, "cargo")) {
 		one = *o.iso;
 		one.net = false;
 		o.iso = one.drop ? &one : NULL;
@@ -567,6 +567,113 @@ static bool prune_empty(const char *dir, bool top)
 	}
 	sv_free(&names);
 	return !top && left == 0 && rmdir(dir) == 0;
+}
+
+/* ---- profile guided optimization (PGO=1, options=(pgo)) ---- */
+
+/* CFLAGS, CXXFLAGS and LDFLAGS: the flags of the build with EXTRA after them */
+static void pgo_flags(build *b, char *const base[3], const char *extra)
+{
+	static const char *const fl[] = {"CFLAGS", "CXXFLAGS", "LDFLAGS"};
+	for (size_t i = 0; i < ARRAY_LEN(fl); i++) {
+		char *v = xasprintf("%s%s", base[i], extra);
+		bexport(b, fl[i], v);
+		free(v);
+	}
+}
+
+static size_t count_suffix(const char *dir, const char *suffix)
+{
+	svec all = SVEC_INIT;
+	files_under(dir, &all);
+	size_t n = 0;
+	for (size_t i = 0; i < all.n; i++)
+		n += str_suffix(all.v[i], suffix);
+	sv_free(&all);
+	return n;
+}
+
+/* the training pass: an instrumented build (prepare, configure, build) runs do_pgo, or the check
+ * when the recipe has none, in SRC; its profile ($PGO_DIR) feeds the real build, which starts over
+ * from fresh sources. GCC: .gcda files, clang: .profraw merged by llvm-profdata. Code the training
+ * did not reach keeps the usual optimization (-fprofile-partial-training). */
+static void pgo_train(build *b, const char *type, const isolation *iso, const char *envfile)
+{
+	const char *name = rget(b->r, "name");
+	bool train_fn = has_fn(b, "do_pgo"), train_check = has_fn(b, "do_check") || bt_has(type, "check");
+	if (!train_fn && !train_check) {
+		warn("%s: options=(pgo) without do_pgo or a check to train on: building without PGO", name);
+		return;
+	}
+	bool clang = bon(b, "CLANG_ON");
+	char *prof = path_join(bget(b, "WORK"), "pgo");
+	mkdirs(prof);
+	if (iso && iso->drop)
+		own_tree(prof, iso);
+	bset(b, "PGO_DIR", prof);
+	char *base[3] = {xstrdup(bget(b, "CFLAGS")), xstrdup(bget(b, "CXXFLAGS")), xstrdup(bget(b, "LDFLAGS"))};
+	char *gen = clang ? xasprintf(" -fprofile-generate=%s", prof)
+			  : xasprintf(" -fprofile-generate=%s -fprofile-update=prefer-atomic", prof);
+	pgo_flags(b, base, gen);
+	free(gen);
+	shrun_write_env(b, type, envfile);
+	static const char *const pass1[] = {"prepare", "configure", "build"};
+	for (size_t i = 0; i < ARRAY_LEN(pass1); i++) {
+		char *fn = xasprintf("do_%s", pass1[i]), *label = xasprintf("pgo: %s (instrumented)", pass1[i]);
+		if (has_fn(b, fn))
+			phase(b, label, fn, type, pass1[i]);
+		else if (bt_has(type, pass1[i]))
+			phase(b, label, NULL, type, pass1[i]);
+		free(fn);
+		free(label);
+	}
+	if (train_fn)
+		phase(b, "pgo: training (do_pgo)", "do_pgo", type, NULL);
+	else if (has_fn(b, "do_check"))
+		phase(b, "pgo: training (do_check)", "do_check", type, "check");
+	else
+		phase(b, "pgo: training (check)", NULL, type, "check");
+	char *use;
+	if (clang) {
+		if (!count_suffix(prof, ".profraw"))
+			die("%s: the PGO training wrote no profile (%s)", name, prof);
+		char *data = path_join(prof, "default.profdata");
+		svec argv = SVEC_INIT, raw = SVEC_INIT;
+		files_under(prof, &raw);
+		sv_push(&argv, "llvm-profdata");
+		sv_push(&argv, "merge");
+		sv_pushf(&argv, "--output=%s", data);
+		for (size_t i = 0; i < raw.n; i++)
+			if (str_suffix(raw.v[i], ".profraw"))
+				sv_push(&argv, raw.v[i]);
+		run_opts o = {.log_fd = b->log_fd};
+		if (run(sv_argv(&argv), &o))
+			die("%s: llvm-profdata merge failed (log: %s)", name, bget(b, "LOG"));
+		sv_free(&argv);
+		sv_free(&raw);
+		use = xasprintf(" -fprofile-use=%s -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date", data);
+		free(data);
+	} else {
+		if (!count_suffix(prof, ".gcda"))
+			die("%s: the PGO training wrote no profile (%s)", name, prof);
+		use = xasprintf(" -fprofile-use=%s -fprofile-partial-training -Wno-missing-profile", prof);
+	}
+	msg2("pgo: %zu profile files, the real build starts over", count_suffix(prof, clang ? ".profraw" : ".gcda"));
+	/* the same paths as the instrumented build: GCC finds the profile of an object by its path */
+	rm_rf(bget(b, "BUILD"));
+	rm_rf(bget(b, "DESTDIR"));
+	mkdirs(bget(b, "BUILD"));
+	mkdirs(bget(b, "DESTDIR"));
+	unpack_sources(b);
+	apply_patches(b);
+	if (iso && iso->drop)
+		own_tree(bget(b, "WORK"), iso);
+	pgo_flags(b, base, use);
+	free(use);
+	shrun_write_env(b, type, envfile);
+	for (size_t i = 0; i < 3; i++)
+		free(base[i]);
+	free(prof);
 }
 
 static void finalize(build *b)
@@ -1030,6 +1137,8 @@ char *build_pkg(const char *pkgname)
 	}
 	char *envfile = path_join(work, "env.sh");
 	shrun_write_env(&b, type, envfile);
+	if (strcmp(type, "meta") && cfg_on("PGO") && rhas_option(r, "pgo"))
+		pgo_train(&b, type, iso, envfile);
 	free(envfile);
 	for (size_t i = 0; i < ARRAY_LEN(PHASES); i++) {
 		const char *ph = PHASES[i];

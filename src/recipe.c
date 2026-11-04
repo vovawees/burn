@@ -24,8 +24,10 @@ const char *const RECIPE_CATEGORIES[] = {"core",     "devel",    "meta",  "kerne
 const char *const BUILD_TYPES[] = {"autotools", "meson", "cmake", "make", "cargo", "python", "custom", "meta", NULL};
 /* late: built after an update is applied, against the updated system (out-of-tree kernel modules
  * need the new kernel) */
+/* pgo: with PGO=1, an instrumented build, the training of do_pgo, then the build with the profile;
+ * !clang: built with GCC also when COMPILER=clang (glibc, the kernel, GCC itself) */
 const char *const RECIPE_OPTIONS[] = {"!lto",       "!strip",    "!hardening", "!prune",
-				      "!linker",    "staticlibs", "emptydirs", "o3", "late", NULL};
+				      "!linker",    "staticlibs", "emptydirs", "o3", "late", "pgo", "!clang", NULL};
 
 static const char *const ARRAY_VARS[] = {"license",   "source",         "sha256",     "depends",    "makedepends",
 					 "features",  "patches",        "options",    "backup",     "noextract",
@@ -124,7 +126,7 @@ void recipe_names(svec *out)
 
 static const char *const RECIPE_FUNCS[] = {"do_prepare",   "do_configure",    "do_build",    "do_check",
 					   "do_install",   "post_install",    "configure_extra", "meson_extra",
-					   "cmake_extra",  NULL};
+					   "cmake_extra",  "do_pgo",          NULL};
 
 /* bash's `unset -v` of every recipe variable, then the defaults: fresh variables, never exported */
 static void recipe_reset(recipe *r)
