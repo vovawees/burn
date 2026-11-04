@@ -230,7 +230,8 @@ static bool lib_exists(const char *so)
 }
 
 /* Every SONAME a package links against is provided by an installed package (or present in the
- * root); preserved old libraries are reported until the packages using them are rebuilt. */
+ * root), every package it depends on is installed; preserved old libraries are reported until the
+ * packages using them are rebuilt. */
 int cmd_doctor(int argc, char **argv)
 {
 	svec pkgs = SVEC_INIT, prov = SVEC_INIT;
@@ -252,6 +253,20 @@ int cmd_doctor(int argc, char **argv)
 			problems++;
 		}
 		sv_free(&needs);
+	}
+	/* what every package depends on is installed (update added no new dependencies before 0.9.1) */
+	for (size_t i = 0; i < pkgs.n; i++) {
+		char *d = db_get(pkgs.v[i], "depends");
+		svec w = SVEC_INIT;
+		sv_split_ws(&w, d ? d : "");
+		for (size_t j = 0; j < w.n; j++) {
+			if (dep_satisfied(w.v[j]))
+				continue;
+			warn("%s depends on %s, which is not installed (burn install %s)", pkgs.v[i], w.v[j], w.v[j]);
+			problems++;
+		}
+		sv_free(&w);
+		free(d);
 	}
 	for (size_t i = 0; i < pkgs.n; i++) {
 		if (!size_nonzero(pkgs.v[i], "preserved"))

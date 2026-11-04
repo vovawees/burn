@@ -406,6 +406,33 @@ bk remove bk >/dev/null 2>&1 && [ "$(cat "$bkc.burnsave")" = mine ] || fail "bac
 rm -f "$bkc".*
 bk install bk >/dev/null 2>&1 && bk remove bk >/dev/null 2>&1 || fail "backup: install and remove"
 [ ! -e "$bkc" ] && [ ! -e "$bkc.burnsave" ] || fail "backup: an untouched file goes with the package"
+# update adds what an upgrade newly depends on before it builds anything (burn 0.7 gained curl and
+# git); doctor names a dependency that is not installed
+mkdir -p "$tmp/ndrec/nd-app" "$tmp/ndrec/nd-lib"
+nd_recipe() { # NAME RELEASE [DEPENDS [CHECK]]
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' "name=$1" 'version=1' "release=$2" "summary=\"$1\"" "homepage=https://example.org/$1" \
+		'license=(MIT)' 'category=extra' 'build_type=custom' "depends=(${3:-})" 'do_install() {' \
+		"	${4:-true}" "	mkdir -p \"\$DESTDIR/usr/share/$1\"" "	echo $1 >\"\$DESTDIR/usr/share/$1/file\"" '}' \
+		>"$tmp/ndrec/$1/recipe"
+}
+nd() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/ndcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$tmp/ndroot" -R "$tmp/ndrec" -y "$@"; }
+nd_recipe nd-app 1 && nd_recipe nd-lib 1
+nd install nd-app >"$tmp/nd.log" 2>&1 || fail "new deps: install: $(cat "$tmp/nd.log")"
+nd list | grep -q '^nd-lib ' && fail "new deps: nd-lib came with release 1"
+# shellcheck disable=SC2016 # the recipe expands it
+nd_recipe nd-app 2 nd-lib '[ -f "$SYSROOT/usr/share/nd-lib/file" ]'
+nd plan >"$tmp/nd.log" 2>&1 || fail "new deps: plan: $(cat "$tmp/nd.log")"
+grep -q 'nd-lib .*new: dependency of nd-app' "$tmp/nd.log" || fail "new deps: plan: $(cat "$tmp/nd.log")"
+nd --no-sync update >"$tmp/nd.log" 2>&1 || fail "new deps: update: $(cat "$tmp/nd.log")"
+grep -q 'New dependencies of the update: nd-lib' "$tmp/nd.log" || fail "new deps: message: $(cat "$tmp/nd.log")"
+nd list | grep -q '^nd-lib ' || fail "new deps: nd-lib is not installed: $(nd list)"
+nd doctor >"$tmp/nd.log" 2>&1 || fail "doctor: $(cat "$tmp/nd.log")"
+rm -rf "$tmp/ndroot/var/lib/burn/installed/nd-lib"
+if nd doctor >"$tmp/nd.log" 2>&1; then fail "doctor: a missing dependency is a problem"; fi
+grep -q 'nd-app depends on nd-lib, which is not installed (burn install nd-lib)' "$tmp/nd.log" ||
+	fail "doctor: message: $(cat "$tmp/nd.log")"
 # options=(late): built after the update is applied, against the updated system (kernel modules)
 mkdir -p "$tmp/ltrec/lt-kernel" "$tmp/ltrec/lt-mod"
 lt_recipes() { # KERNEL-VERSION MODULE-RELEASE

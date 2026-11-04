@@ -128,6 +128,7 @@ int cmd_sync(int argc, char **argv)
 typedef struct {
 	char *name, *old, *avail, *reason, *risk; /* avail "-": will not be touched */
 	char *security;                           /* the advisories the new recipe fixes (security=) */
+	bool dep;                                 /* new, and an upgrade needs it */
 } plan_entry;
 
 typedef struct {
@@ -141,7 +142,7 @@ static void plan_add(plan *p, const char *name, const char *old, const char *ava
 		p->cap = p->cap ? 2 * p->cap : 16;
 		p->e = xrealloc(p->e, p->cap * sizeof *p->e);
 	}
-	p->e[p->n++] = (plan_entry){xstrdup(name), xstrdup(old), xstrdup(avail), reason, xstrdup(risk), NULL};
+	p->e[p->n++] = (plan_entry){xstrdup(name), xstrdup(old), xstrdup(avail), reason, xstrdup(risk), NULL, false};
 }
 
 static void plan_free(plan *p)
@@ -372,6 +373,37 @@ static void plan_print(const plan *p)
 	plan_changelog(p);
 }
 
+/* The new dependencies of the upgrades in the plan: what their new recipes need and is not
+ * installed (burn 0.7 gained curl and git). update adds them before it builds anything. */
+static void plan_new_deps(plan *p)
+{
+	svec ups = SVEC_INIT, need = SVEC_INIT, why = SVEC_INIT;
+	for (size_t i = 0; i < p->n; i++)
+		if (strcmp(p->e[i].avail, "-") && strcmp(p->e[i].old, "-"))
+			sv_push(&ups, p->e[i].name);
+	deps_missing(&ups, &need, &why);
+	for (size_t i = 0; i < need.n; i++) {
+		plan_entry *e = NULL;
+		for (size_t j = 0; j < p->n && !e; j++)
+			if (!strcmp(p->e[j].name, need.v[i]))
+				e = &p->e[j];
+		if (e) { /* a spin asks for it too: it comes first all the same */
+			e->dep = true;
+			continue;
+		}
+		char *nw = NULL, *rid = NULL;
+		if (recipe_state(need.v[i], &nw, &rid, NULL)) {
+			plan_add(p, need.v[i], "-", nw, xasprintf("new: dependency of %s", why.v[i]), "");
+			p->e[p->n - 1].dep = true;
+		}
+		free(nw);
+		free(rid);
+	}
+	sv_free(&ups);
+	sv_free(&need);
+	sv_free(&why);
+}
+
 int cmd_plan(int argc, char **argv)
 {
 	(void)argc;
@@ -380,6 +412,7 @@ int cmd_plan(int argc, char **argv)
 	plan_compute(&p);
 	if (B.security)
 		plan_security_only(&p);
+	plan_new_deps(&p);
 	plan_print(&p);
 	plan_free(&p);
 	return 0;
@@ -454,21 +487,32 @@ int cmd_update(int argc, char **argv)
 	plan_compute(&p);
 	if (B.security)
 		plan_security_only(&p);
+	plan_new_deps(&p);
 	plan_print(&p);
-	svec todo = SVEC_INIT, fresh = SVEC_INIT;
+	svec todo = SVEC_INIT, fresh = SVEC_INIT, need = SVEC_INIT;
 	for (size_t i = 0; i < p.n; i++)
 		if (strcmp(p.e[i].avail, "-"))
-			sv_push(strcmp(p.e[i].old, "-") ? &todo : &fresh, p.e[i].name);
+			sv_push(strcmp(p.e[i].old, "-") ? &todo : p.e[i].dep ? &need : &fresh, p.e[i].name);
 	plan_free(&p);
-	if (!todo.n && !fresh.n) {
+	if (!todo.n && !fresh.n && !need.n) {
 		sv_free(&todo);
 		sv_free(&fresh);
+		sv_free(&need);
 		return 0;
 	}
-	char *q = xasprintf("Build %zu package(s) and apply them?", todo.n + fresh.n);
+	char *q = xasprintf("Build %zu package(s) and apply them?", todo.n + fresh.n + need.n);
 	if (!confirm(q))
 		die("aborted, nothing changed");
 	free(q);
+	/* 0) the new dependencies of the upgrades go in first, the way install adds packages: nothing
+	 *    installed changes, and the builds of step 1 need them in the root */
+	if (need.n) {
+		char *list = sv_join(&need, " ");
+		msg("New dependencies of the update: %s", list);
+		free(list);
+		build_install(&need, NULL);
+		triggers_run();
+	}
 	svec order = SVEC_INIT, files = SVEC_INIT, late = SVEC_INIT;
 	deps_order_set(&todo, &order);
 	/* 1) fetch and verify every source, then build everything: the running system is untouched
@@ -518,5 +562,6 @@ int cmd_update(int argc, char **argv)
 	sv_free(&order);
 	sv_free(&todo);
 	sv_free(&fresh);
+	sv_free(&need);
 	return 0;
 }

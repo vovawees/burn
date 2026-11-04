@@ -75,7 +75,8 @@ static void recipe_deps(const char *name, svec *out)
 	recipe_free(r);
 }
 
-static bool dep_satisfied(const char *d)
+/* installed, or ASSUME_INSTALLED */
+bool dep_satisfied(const char *d)
 {
 	if (db_has(d))
 		return true;
@@ -131,6 +132,28 @@ static void set_visit(const char *q, const strmap *in, strmap *seen, svec *order
 			set_visit(deps.v[i], in, seen, order);
 	sv_free(&deps);
 	sv_push(order, q);
+}
+
+/* What the recipes NAMES (installed packages, about to be upgraded) need to build and run and is
+ * not installed, with what that needs in turn, dependencies first; WHY gets, for each, the
+ * package of NAMES that asks for it */
+void deps_missing(const svec *names, svec *out, svec *why)
+{
+	strmap state = STRMAP_INIT;
+	for (size_t i = 0; i < names->n; i++) {
+		svec deps = SVEC_INIT;
+		recipe_deps(names->v[i], &deps);
+		for (size_t j = 0; j < deps.n; j++) {
+			if (dep_satisfied(deps.v[j]))
+				continue;
+			size_t before = out->n;
+			visit(deps.v[j], &state, out);
+			for (size_t k = before; k < out->n; k++)
+				sv_push(why, names->v[i]);
+		}
+		sv_free(&deps);
+	}
+	sm_free(&state);
 }
 
 void deps_order_set(const svec *names, svec *order)

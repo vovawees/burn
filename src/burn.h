@@ -181,6 +181,8 @@ int cmd_unpack(int argc, char **argv);
 /* ---- deps.c ---- */
 void deps_resolve(const svec *names, svec *order); /* what to build, dependencies first */
 void deps_order_set(const svec *names, svec *order); /* NAMES, dependencies inside the set first */
+void deps_missing(const svec *names, svec *out, svec *why); /* what upgrades of NAMES add */
+bool dep_satisfied(const char *d);
 bool pkg_uptodate(const char *name);               /* installed from this recipe and features */
 
 /* ---- cmd_recipe.c ---- */
