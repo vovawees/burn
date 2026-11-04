@@ -190,6 +190,10 @@ int cmd_doctor(int argc, char **argv);
 /* ---- cmd_pkg.c ---- */
 int cmd_install(int argc, char **argv);
 int cmd_remove(int argc, char **argv);
+/* install NAMES with their dependencies (what is up to date is skipped), like burn install */
+void install_packages(const svec *names);
+/* remove NAMES, dependents first (no question asked), like burn remove */
+void remove_packages(const svec *names);
 int cmd_rollback(int argc, char **argv);
 int cmd_clone(int argc, char **argv);
 void abi_followup(void); /* rebuild the packages linked against sonames this command took away */
@@ -198,6 +202,16 @@ void abi_followup(void); /* rebuild the packages linked against sonames this com
 int cmd_sync(int argc, char **argv);
 int cmd_plan(int argc, char **argv);
 int cmd_update(int argc, char **argv);
+
+/* ---- spin.c ---- */
+char *spin_root(void);          /* $R/var/lib/burn/spins */
+void spin_dirs(svec *out);      /* the added spins, by name */
+void spin_setup(void);          /* SPINS_FEATURES: the features of every spin */
+void spin_package_features_files(svec *out);
+void spin_missing(svec *names, svec *why); /* packages spins want that are not installed */
+void spin_sync(void);           /* pull the git spins */
+void spin_note_installed(const svec *before); /* burn update installed what spins wanted */
+int cmd_spin(int argc, char **argv);
 
 /* ---- snapshot.c ---- */
 void snapshot_take(bool required); /* the btrfs snapshot of ROOT before an update */

@@ -111,6 +111,7 @@ static void sync_repos(void)
 		free(base);
 	}
 	sv_free(&urls);
+	spin_sync();
 }
 
 int cmd_sync(int argc, char **argv)
@@ -249,6 +250,21 @@ static void plan_compute(plan *p)
 		free(path);
 		free(old);
 	}
+	/* what the spins ask for and is not installed yet (a new spin.conf after sync) */
+	svec want = SVEC_INIT, why = SVEC_INIT;
+	spin_missing(&want, &why);
+	for (size_t i = 0; i < want.n; i++) {
+		char *nw = NULL, *rid = NULL;
+		if (!recipe_state(want.v[i], &nw, &rid)) {
+			plan_add(p, want.v[i], "-", "-", xasprintf("spin %s: no recipe (skipped)", why.v[i]), "");
+		} else {
+			plan_add(p, want.v[i], "-", nw, xasprintf("new: spin %s", why.v[i]), "");
+		}
+		free(nw);
+		free(rid);
+	}
+	sv_free(&want);
+	sv_free(&why);
 	sv_free(&core);
 	sv_free(&pkgs);
 }
@@ -391,16 +407,17 @@ int cmd_update(int argc, char **argv)
 	plan p = {0};
 	plan_compute(&p);
 	plan_print(&p);
-	svec todo = SVEC_INIT;
+	svec todo = SVEC_INIT, fresh = SVEC_INIT;
 	for (size_t i = 0; i < p.n; i++)
 		if (strcmp(p.e[i].avail, "-"))
-			sv_push(&todo, p.e[i].name);
+			sv_push(strcmp(p.e[i].old, "-") ? &todo : &fresh, p.e[i].name);
 	plan_free(&p);
-	if (!todo.n) {
+	if (!todo.n && !fresh.n) {
 		sv_free(&todo);
+		sv_free(&fresh);
 		return 0;
 	}
-	char *q = xasprintf("Build %zu package(s) and apply them?", todo.n);
+	char *q = xasprintf("Build %zu package(s) and apply them?", todo.n + fresh.n);
 	if (!confirm(q))
 		die("aborted, nothing changed");
 	free(q);
@@ -421,11 +438,20 @@ int cmd_update(int argc, char **argv)
 	/* 4) rebuild what linked against sonames that disappeared */
 	abi_followup();
 	triggers_run();
+	/* 5) the new packages of spins, with their dependencies, on top of the updated system */
+	if (fresh.n) {
+		svec before = SVEC_INIT;
+		db_list(&before);
+		install_packages(&fresh);
+		spin_note_installed(&before);
+		sv_free(&before);
+	}
 	run_hooks("post-update");
 	state_record();
 	cmd_doctor(argc, argv);
 	sv_free(&files);
 	sv_free(&order);
 	sv_free(&todo);
+	sv_free(&fresh);
 	return 0;
 }

@@ -85,6 +85,15 @@ static void install_names(const svec *names)
 	sv_free(&todo);
 }
 
+void install_packages(const svec *names)
+{
+	install_names(names);
+	triggers_run();
+	preserved_cleanup();
+	abi_followup();
+	triggers_run();
+}
+
 int cmd_install(int argc, char **argv)
 {
 	if (!argc)
@@ -135,12 +144,26 @@ static void db_order(const svec *names, size_t at, strmap *seen, svec *order)
 	free(deps);
 }
 
+void remove_packages(const svec *names)
+{
+	svec order = SVEC_INIT;
+	strmap seen = STRMAP_INIT;
+	for (size_t i = 0; i < names->n; i++)
+		db_order(names, i, &seen, &order);
+	for (size_t i = order.n; i-- > 0;)
+		pkg_remove(order.v[i]);
+	preserved_cleanup();
+	triggers_run();
+	sm_free(&seen);
+	sv_free(&order);
+}
+
 int cmd_remove(int argc, char **argv)
 {
 	if (!argc)
 		die("usage: burn remove <pkg>...");
 	need_write();
-	svec names = SVEC_INIT, order = SVEC_INIT;
+	svec names = SVEC_INIT;
 	for (int i = 0; i < argc; i++) {
 		if (!db_has(argv[i]))
 			die("%s is not installed", argv[i]);
@@ -152,15 +175,7 @@ int cmd_remove(int argc, char **argv)
 		die("aborted, nothing changed");
 	free(q);
 	free(all);
-	strmap seen = STRMAP_INIT;
-	for (size_t i = 0; i < names.n; i++)
-		db_order(&names, i, &seen, &order);
-	for (size_t i = order.n; i-- > 0;)
-		pkg_remove(order.v[i]);
-	preserved_cleanup();
-	triggers_run();
-	sm_free(&seen);
-	sv_free(&order);
+	remove_packages(&names);
 	sv_free(&names);
 	return 0;
 }

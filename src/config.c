@@ -396,7 +396,7 @@ static const char *or_dash(const char *s)
 static int profile_show(void)
 {
 	svec w = SVEC_INIT;
-	char *both = xasprintf("%s %s", cfg("PROFILE_FEATURES"), cfg("FEATURES"));
+	char *both = xasprintf("%s %s %s", cfg("PROFILE_FEATURES"), cfg("SPINS_FEATURES"), cfg("FEATURES"));
 	sv_split_ws(&w, both);
 	char *features = sv_join(&w, " ");
 	char *cflags = xasprintf("%s %s %s%s%s", cfg("OPT_FLAGS"), cfg("CPU_CFLAGS"), cfg("HARDENING_FLAGS"),

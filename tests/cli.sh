@@ -184,6 +184,82 @@ if command -v curl >/dev/null || command -v wget >/dev/null; then
 	[ -f "$tmp/cache/sources/bad.txt.bad" ] || fail "bad download moved aside"
 	[ "$(f checksum fetchme | sed -n 2p)" = "	920036cf7afe3227e028562af93cd4c8be055794da11373062bcb8c2706650cd" ] || fail "checksum"
 fi
+# spins: a directory (or git repository) with spin.conf and its own recipes; `spin add` brings
+# its features, packages and services, `update` what a newer spin.conf asks for, `remove` takes
+# all of it back
+sp() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/spcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$tmp/sproot" -R "$fixtures" --host-deps "$@"; }
+spin_recipe() { # NAME [DEPENDS]
+	mkdir -p "$tmp/myspin/packages/$1"
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' "name=$1" 'version=1' 'release=1' "summary=\"$1 of the test spin\"" \
+		"homepage=https://example.org/$1" 'license=(MIT)' 'category=extra' 'build_type=custom' \
+		"depends=(${2:-})" 'do_install() {' "	mkdir -p \"\$DESTDIR/usr/share/$1\"" \
+		"	echo $1 >\"\$DESTDIR/usr/share/$1/file\"" '}' >"$tmp/myspin/packages/$1/recipe"
+}
+spin_recipe spinlib
+spin_recipe spinapp spinlib
+mkdir -p "$tmp/sproot/usr/lib/dinit.d/user"
+printf 'type = process\ncommand = /usr/bin/true\n' >"$tmp/sproot/usr/lib/dinit.d/spind"
+printf 'type = process\ncommand = /usr/bin/true\n' >"$tmp/sproot/usr/lib/dinit.d/user/spinu"
+printf '%s\n' 'SPIN_NAME=myspin' 'SPIN_DESC="Test spin"' 'SPIN_PACKAGES=(spinapp)' 'SPIN_FEATURES="+docs"' \
+	'SPIN_SERVICES=(spind nosuchsvc)' 'SPIN_USER_SERVICES=(spinu)' >"$tmp/myspin/spin.conf"
+[ -z "$(sp spin list 2>/dev/null)" ] || fail "spin list: none yet"
+sp -y spin add "$tmp/myspin" 2>"$tmp/err" || fail "spin add: $(cat "$tmp/err")"
+[ "$(sp spin list | awk '{print $1}')" = myspin ] || fail "spin list"
+[ "$(cat "$tmp/sproot/usr/share/spinapp/file")" = spinapp ] || fail "spin add: the package"
+[ -f "$tmp/sproot/usr/share/spinlib/file" ] || fail "spin add: its dependency"
+[ "$(readlink "$tmp/sproot/etc/dinit.d/boot.d/spind")" = /usr/lib/dinit.d/spind ] || fail "spin add: service"
+[ -L "$tmp/sproot/etc/dinit.d/user/boot.d/spinu" ] || fail "spin add: user service"
+grep -q 'no service nosuchsvc in the root' "$tmp/err" || fail "spin add: missing service warning"
+[ "$(sp query good features)" = "+docs +tls" ] || fail "spin features"
+sp profile show | grep -q '^features .* +docs' || fail "profile show: the features of spins"
+sp spin show myspin | grep -q '^brought  *spinapp spinlib$' || fail "spin show: $(sp spin show myspin)"
+if sp -y spin add "$tmp/myspin" 2>"$tmp/err"; then fail "spin add twice"; fi
+grep -q 'spin myspin is added already' "$tmp/err" || fail "spin add twice: message"
+printf 'SPIN_PACKAGES=(nosuchpkg)\n' >"$tmp/badspin.conf"
+mkdir -p "$tmp/badspin" && mv "$tmp/badspin.conf" "$tmp/badspin/spin.conf"
+if sp -y spin add "$tmp/badspin" 2>"$tmp/err"; then fail "spin add: unknown package"; fi
+grep -q 'spin badspin: no recipe for nosuchpkg' "$tmp/err" || fail "unknown package message: $(cat "$tmp/err")"
+[ ! -e "$tmp/sproot/var/lib/burn/spins/badspin" ] || fail "a failed add leaves no spin behind"
+# a newer spin.conf: plan shows the new package, update installs it
+spin_recipe spinextra
+sed -i 's/^SPIN_PACKAGES=.*/SPIN_PACKAGES=(spinapp spinextra)/' "$tmp/myspin/spin.conf"
+sp plan 2>&1 | grep -q 'spinextra .*new: spin myspin' || fail "plan: the new package of a spin"
+sp -y --no-sync update >/dev/null 2>"$tmp/err" || fail "update: $(cat "$tmp/err")"
+[ -f "$tmp/sproot/usr/share/spinextra/file" ] || fail "update: the new package of a spin"
+# a package of the user's own that needs spinlib keeps it
+spin_recipe mine spinlib
+mv "$tmp/myspin/packages/mine" "$tmp/minepkg"
+mkdir -p "$tmp/mine" && mv "$tmp/minepkg" "$tmp/mine/mine"
+sp -R "$tmp/mine" -y install mine >/dev/null 2>&1 || fail "install mine"
+sp -y spin remove myspin 2>"$tmp/err" || fail "spin remove: $(cat "$tmp/err")"
+grep -q 'keeping spinlib: mine needs it' "$tmp/err" || fail "spin remove: keeps what others need"
+[ ! -e "$tmp/sproot/usr/share/spinapp" ] && [ ! -e "$tmp/sproot/usr/share/spinextra" ] || fail "spin remove: packages"
+[ -f "$tmp/sproot/usr/share/spinlib/file" ] || fail "spin remove: spinlib stays"
+[ ! -e "$tmp/sproot/etc/dinit.d/boot.d/spind" ] && [ ! -e "$tmp/sproot/etc/dinit.d/user/boot.d/spinu" ] ||
+	fail "spin remove: services"
+[ "$(sp query good features)" = "-docs +tls" ] || fail "spin remove: features"
+[ -z "$(sp spin list 2>/dev/null)" ] || fail "spin remove: list"
+if sp -y spin remove myspin 2>/dev/null; then fail "spin remove: unknown spin"; fi
+# a git spin: cloned under its repository name, pulled by sync; what was installed before stays
+if command -v git >/dev/null; then
+	g=$tmp/gitspin.git
+	mkdir -p "$g/packages" && cp -r "$tmp/myspin/packages/spinlib" "$g/packages/"
+	printf 'SPIN_DESC="Git spin"\nSPIN_PACKAGES=(spinlib)\n' >"$g/spin.conf"
+	gc() { git -C "$g" -c user.name=t -c user.email=t@example.org "$@"; }
+	gc init -q && gc add -A && gc commit -qm one
+	sp -y spin add "file://$g" 2>"$tmp/err" || fail "spin add git: $(cat "$tmp/err")"
+	sp spin list | grep -q '^gitspin  *[0-9a-f]' || fail "git spin list: $(sp spin list)"
+	printf 'RECIPE_REPOS=()\n' >"$tmp/norepos.conf"
+	echo '# two' >>"$g/spin.conf" && gc commit -qam two
+	sp -c "$tmp/norepos.conf" sync 2>"$tmp/err" || fail "sync git spin: $(cat "$tmp/err")"
+	grep -q 'Syncing spin gitspin' "$tmp/err" || fail "sync: spins"
+	grep -q '# two' "$tmp/sproot/var/lib/burn/spins/gitspin/spin.conf" || fail "sync: pulled"
+	sp -y spin remove gitspin 2>/dev/null || fail "spin remove git"
+	[ ! -e "$tmp/sproot/var/lib/burn/spins/gitspin" ] || fail "spin remove: the clone"
+	[ -f "$tmp/sproot/usr/share/spinlib/file" ] || fail "spin remove: what was installed before stays"
+fi
 # a build outlives the file of its burn (burn installed a new burn, then builds more): the
 # helpers of recipe functions still reach the running burn
 mkdir -p "$tmp/self/selfdel"

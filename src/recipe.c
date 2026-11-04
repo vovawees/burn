@@ -45,6 +45,17 @@ void recipe_dirs(svec *out)
 		if (is_dir(paths.v[i]))
 			sv_push(out, paths.v[i]);
 	sv_free(&paths);
+	/* the recipes of the spins come before the base's: a spin may carry its own build */
+	svec spins = SVEC_INIT;
+	spin_dirs(&spins);
+	for (size_t i = 0; i < spins.n; i++) {
+		char *p = path_join(spins.v[i], "packages");
+		if (is_dir(p))
+			sv_push_own(out, p);
+		else
+			free(p);
+	}
+	sv_free(&spins);
 	char *pat = xasprintf("%s/*/packages", B.repo_dir ? B.repo_dir : "");
 	glob_t g;
 	if (glob(pat, 0, NULL, &g) == 0) {
@@ -243,12 +254,17 @@ static void feat_set(recipe *r, const char *name, bool on)
 	f->on = on;
 }
 
-/* the words after NAME on its lines of $ROOT/etc/burn/package.features */
+/* the words after NAME on its lines of the spins' package.features, then of
+ * $ROOT/etc/burn/package.features */
 static void package_features(const char *name, svec *out)
 {
-	char *path = xasprintf("%s/etc/burn/package.features", B.R);
+	svec files = SVEC_INIT;
+	spin_package_features_files(&files);
+	sv_push_own(&files, xasprintf("%s/etc/burn/package.features", B.R));
 	svec lines = SVEC_INIT;
-	file_lines(path, &lines);
+	for (size_t i = 0; i < files.n; i++)
+		file_lines(files.v[i], &lines);
+	sv_free(&files);
 	for (size_t i = 0; i < lines.n; i++) {
 		char *hash = strchr(lines.v[i], '#');
 		if (hash)
@@ -261,7 +277,6 @@ static void package_features(const char *name, svec *out)
 		sv_free(&w);
 	}
 	sv_free(&lines);
-	free(path);
 }
 
 static void words_of(const recipe *r, const char *var, svec *out)
@@ -275,8 +290,8 @@ static void words_of(const recipe *r, const char *var, svec *out)
 	}
 }
 
-/* features=(+on -off off) in the recipe; overrides: the profile, burn.conf, package.features
- * and --features, in this order. Only the features a recipe declares can be switched. */
+/* features=(+on -off off) in the recipe; overrides: the profile, the spins, burn.conf,
+ * package.features (the spins', then /etc/burn's) and --features, in this order. Only the features a recipe declares can be switched. */
 void features_resolve(recipe *r)
 {
 	for (size_t i = 0; i < r->nfeat; i++)
@@ -296,6 +311,7 @@ void features_resolve(recipe *r)
 	sv_free(&f);
 	svec tok = SVEC_INIT;
 	words_of(r, "PROFILE_FEATURES", &tok);
+	words_of(r, "SPINS_FEATURES", &tok);
 	words_of(r, "FEATURES", &tok);
 	package_features(rget(r, "name"), &tok);
 	sv_split_ws(&tok, B.cli_features ? B.cli_features : "");

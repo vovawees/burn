@@ -37,6 +37,9 @@ static void usage(FILE *f)
 	      "  lint [pkg|dir]...           check recipes\n"
 	      "  checksum <pkg>              print the sha256 of the sources (--write: into the recipe)\n"
 	      "  profile [show|list|detect]  hardware profiles\n"
+	      "  spin add <git-url|dir>      add a spin: its recipes, features, packages and services\n"
+	      "  spin remove|show <name>     take a spin back out (packages, services) / describe it\n"
+	      "  spin [list]                 the spins of the root\n"
 	      "  vercmp <a> <b>              compare two versions: prints -1, 0 or 1\n"
 	      "\n"
 	      "Options:\n"
@@ -74,7 +77,7 @@ static const command commands[] = {
 	{"clone", cmd_clone},
 	{"fetch", cmd_fetch},   {"checksum", cmd_checksum}, {"build", cmd_build},   {"unpack", cmd_unpack},
 	{"sync", cmd_sync},     {"plan", cmd_plan},       {"update", cmd_update}, {"upgrade", cmd_update},
-	{"snapshot", cmd_snapshot},
+	{"snapshot", cmd_snapshot}, {"spin", cmd_spin},
 };
 
 static bool takes_value(const char *a)
@@ -239,6 +242,7 @@ int main(int argc, char **argv)
 	cfg_set("REPO_DIR", B.repo_dir);
 	cfg_set("HOLD_FILE", B.hold_file);
 	flags_setup();
+	spin_setup();
 
 	const char *cmd = args.v[0];
 	int rc = -1;
