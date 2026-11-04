@@ -107,6 +107,7 @@ void config_defaults(void)
 		{"ISOLATE", "auto"},
 		{"BUILD_USER", "burn"},
 		{"HOST_DEPS", "0"},
+		{"ALLOW_NONFREE", "0"},
 		{"CCACHE", "0"},
 		{"CCACHE_SIZE", "5G"},
 		{"LINKER", ""},

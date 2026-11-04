@@ -369,6 +369,19 @@ hd --host-deps -y install hd-app >"$tmp/hd.log" 2>&1 || fail "host-deps: install
 # a native build needs every makedepend in the root (they stay installed, as in Gentoo)
 hd -y install hd-app >"$tmp/hd.log" 2>&1 || fail "native: install: $(cat "$tmp/hd.log")"
 [ "$(hd list | awk '{print $1}' | tr '\n' ' ')" = "hd-app hd-corelib hd-proto hd-tool " ] || fail "native: every makedepend: $(hd list)"
+# category nonfree (a proprietary license): refused until the owner sets ALLOW_NONFREE=1
+hd_recipe hd-blob nonfree
+sed -i 's/^license=.*/license=(LicenseRef-Blob)/' "$tmp/hdrec/hd-blob/recipe"
+hd lint hd-blob >"$tmp/out" 2>&1 || true # no sources: lint fails, but not on the category
+if grep -q 'category must be' "$tmp/out"; then fail "nonfree: lint: $(cat "$tmp/out")"; fi
+if hd -y install hd-blob >"$tmp/out" 2>&1; then fail "nonfree: install must be refused"; fi
+grep -q 'hd-blob is not free software (license: LicenseRef-Blob); to build and install it, set ALLOW_NONFREE=1' \
+	"$tmp/out" || fail "nonfree: message: $(cat "$tmp/out")"
+if hd build hd-blob >"$tmp/out" 2>&1; then fail "nonfree: build must be refused"; fi
+mkdir -p "$tmp/hdroot/etc/burn"
+echo 'ALLOW_NONFREE=1' >>"$tmp/hdroot/etc/burn/burn.conf"
+hd -y install hd-blob >"$tmp/out" 2>&1 || fail "nonfree: allowed: $(cat "$tmp/out")"
+hd list | grep -q '^hd-blob ' || fail "nonfree: installed: $(hd list)"
 # backup=() files, three ways (as pacman): an untouched file takes the new default, a changed one
 # stays and the new default goes to .burnnew; removal saves only a changed file (.burnsave)
 mkdir -p "$tmp/bkrec/bk"

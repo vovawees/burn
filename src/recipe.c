@@ -17,9 +17,10 @@ const char *const RECIPE_VARS[] = {
 	"makedepends", "features",   "patches",        "patch_strip", "options",      "backup",
 	"noextract",   "configure_args", "meson_args", "cmake_args",  "make_args",    "make_install_args",
 	"cargo_args",  "out_of_tree", "meson_subdir",  "cmake_subdir", "cflags_append", "split", NULL};
-/* category = layer of the base; 'extra' is for spin and user overlays */
-const char *const RECIPE_CATEGORIES[] = {"core",     "devel",   "meta",     "kernel", "firmware",
-					 "drivers",  "platform", "extra",   NULL};
+/* category = layer of the base; 'extra' is for spin and user overlays; 'nonfree' is software
+ * under a proprietary license (the NVIDIA driver), built only with ALLOW_NONFREE=1 */
+const char *const RECIPE_CATEGORIES[] = {"core",     "devel",    "meta",  "kernel",  "firmware",
+					 "drivers",  "platform", "extra", "nonfree", NULL};
 const char *const BUILD_TYPES[] = {"autotools", "meson", "cmake", "make", "cargo", "python", "custom", "meta", NULL};
 const char *const RECIPE_OPTIONS[] = {"!lto",       "!strip",    "!hardening", "!prune",
 				      "!linker",    "staticlibs", "emptydirs", "o3", NULL};
@@ -228,6 +229,18 @@ const char *rget(const recipe *r, const char *var)
 void rlist(const recipe *r, const char *var, svec *out)
 {
 	sh_get_list(&r->env, var, out);
+}
+
+/* proprietary software is built and installed only when the owner of the system asked for it */
+void recipe_allowed(const recipe *r)
+{
+	if (strcmp(rget(r, "category"), "nonfree") || cfg_on("ALLOW_NONFREE"))
+		return;
+	svec lic = SVEC_INIT;
+	rlist(r, "license", &lic);
+	char *l = sv_join(&lic, " ");
+	die("%s is not free software (license: %s); to build and install it, set ALLOW_NONFREE=1 in "
+	    "/etc/burn/burn.conf", rget(r, "name"), l);
 }
 
 bool rhas_option(const recipe *r, const char *opt)

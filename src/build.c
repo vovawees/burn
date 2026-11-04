@@ -918,6 +918,7 @@ static svec built_now = SVEC_INIT;
 char *build_pkg(const char *pkgname)
 {
 	recipe *r = recipe_load(pkgname);
+	recipe_allowed(r);
 	features_resolve(r);
 	build b;
 	build_init(&b, r);

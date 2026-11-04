@@ -83,6 +83,7 @@ recipe *recipe_try_load(const char *what, char **err);
 void recipe_free(recipe *r);
 const char *rget(const recipe *r, const char *var); /* "" when unset */
 void rlist(const recipe *r, const char *var, svec *out);
+void recipe_allowed(const recipe *r); /* dies on category nonfree without ALLOW_NONFREE=1 */
 bool rhas_option(const recipe *r, const char *opt);
 void features_resolve(recipe *r);
 char *features_string(const recipe *r); /* "+a -b" sorted by name */

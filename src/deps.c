@@ -30,6 +30,7 @@ static bool from_host(const char *name)
 static void recipe_deps(const char *name, svec *out)
 {
 	recipe *r = recipe_load(name);
+	recipe_allowed(r);
 	features_resolve(r);
 	svec d = SVEC_INIT, act = SVEC_INIT, outputs = SVEC_INIT, words = SVEC_INIT;
 	recipe_outputs(r, &outputs);
