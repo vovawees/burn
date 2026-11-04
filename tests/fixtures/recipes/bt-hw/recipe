@@ -5,6 +5,8 @@ summary="a package that uses the hardware variables of the profile"
 homepage=https://example.org/bt-hw
 license=(MIT)
 category=extra
+# the GPU drivers of the profile as features
+features=(video_cards_amd +video_cards_intel)
 build_type=custom
 
 do_build() { :; }

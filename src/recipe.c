@@ -417,8 +417,9 @@ static void words_of(const recipe *r, const char *var, svec *out)
 	}
 }
 
-/* features=(+on -off off) in the recipe; overrides: the profile, the spins, burn.conf,
- * package.features (the spins', then /etc/burn's) and --features, in this order. Only the features a recipe declares can be switched. */
+/* features=(+on -off off) in the recipe; overrides: VIDEO_CARDS (video_cards_CARD), the profile,
+ * the spins, burn.conf, package.features (the spins', then /etc/burn's) and --features, in this
+ * order. Only the features a recipe declares can be switched. */
 void features_resolve(recipe *r)
 {
 	for (size_t i = 0; i < r->nfeat; i++)
@@ -436,6 +437,14 @@ void features_resolve(recipe *r)
 			feat_set(r, s, false);
 	}
 	sv_free(&f);
+	/* the GPU drivers of the profile switch the declared video_cards_CARD features (as USE_EXPAND
+	 * in Gentoo): on for the cards in VIDEO_CARDS, off for the others; the overrides still apply */
+	svec cards = SVEC_INIT;
+	words_of(r, "VIDEO_CARDS", &cards);
+	for (size_t i = 0; i < r->nfeat; i++)
+		if (!strncmp(r->feat[i].name, "video_cards_", 12))
+			r->feat[i].on = sv_has(&cards, r->feat[i].name + 12);
+	sv_free(&cards);
 	svec tok = SVEC_INIT;
 	words_of(r, "PROFILE_FEATURES", &tok);
 	words_of(r, "SPINS_FEATURES", &tok);

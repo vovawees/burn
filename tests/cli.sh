@@ -44,6 +44,11 @@ printf 'inherit native\nVIDEO_CARDS=amd\nFIRMWARE="amdgpu rtw88"\nQUIRKS="$PROFI
 b -p deck profile show | grep -q "^quirks  *$tmp/profiles/deck.d$" || fail "PROFILE_DIR"
 b -p deck profile show | grep -q '^firmware  *amdgpu rtw88$' || fail "profile: firmware"
 b profile show | grep -q '^firmware  *-$' || fail "profile: hardware variables are reset"
+# VIDEO_CARDS switches the video_cards_CARD features of a recipe; the overrides still apply
+[ "$(b -p deck query bt-hw features)" = "+video_cards_amd -video_cards_intel" ] || fail "video_cards features"
+[ "$(b query bt-hw features)" = "-video_cards_amd -video_cards_intel" ] || fail "video_cards: no cards"
+[ "$(b -p deck -f +video_cards_intel query bt-hw features)" = "+video_cards_amd +video_cards_intel" ] ||
+	fail "video_cards: -f"
 hw() {
 	env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/hwcache" NO_COLOR=1 "$BURN" -r "$tmp/hwroot" \
 		-R "$fixtures" --host-deps -y "$@" build bt-hw >"$tmp/hw.log" 2>&1 || fail "build bt-hw $*: $(cat "$tmp/hw.log")"

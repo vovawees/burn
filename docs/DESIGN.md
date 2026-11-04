@@ -170,8 +170,11 @@ VIDEO_CARDS=$HOST_VIDEO_CARDS
 а пакеты, которым GPU безразличен, общие.
 
 Особенности пакета складываются по порядку: объявленные в рецепте (`+x` включена по умолчанию) →
-`PROFILE_FEATURES` → `SPIN_FEATURES` подключённых сборок → `FEATURES` из `burn.conf` → `package.features`
-сборок и `/etc/burn/package.features` → `-f`. Учитываются только особенности, которые рецепт объявил.
+`VIDEO_CARDS` профиля → `PROFILE_FEATURES` → `SPIN_FEATURES` подключённых сборок → `FEATURES` из `burn.conf` →
+`package.features` сборок и `/etc/burn/package.features` → `-f`. Учитываются только особенности, которые рецепт
+объявил. Особенности `video_cards_<карта>` (как USE_EXPAND в Gentoo) включает и выключает сам `VIDEO_CARDS`:
+рецепт Mesa объявляет `video_cards_intel` и зависит от `llvm:video_cards_intel` — LLVM нужен для сборки,
+только если в профиле есть Intel.
 
 ## Сборки (spins)
 
