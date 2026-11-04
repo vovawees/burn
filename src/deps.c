@@ -6,9 +6,27 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* depends, and makedepends unless the build tools come from the host (cross or bootstrap).
- * A recipe with split packages never needs its own packages to build; a split package needs
- * what its recipe needs to build, and its own depends_KEY. */
+/* what the host has when it provides the build tools: the layers devel (compilers, meson, cmake,
+ * perl, python and its modules) and core (openssl for the kernel's certificate tools, ...), which the
+ * bootstrap checks for */
+static bool from_host(const char *name)
+{
+	char *path = recipe_path(name);
+	if (!path)
+		return false; /* "no recipe provides" comes later, from visit() */
+	free(path);
+	recipe *r = recipe_load(name);
+	const char *c = rget(r, "category");
+	bool host = !strcmp(c, "devel") || !strcmp(c, "core");
+	recipe_free(r);
+	return host;
+}
+
+/* depends and makedepends. When the build tools come from the host (cross or bootstrap), the
+ * makedepends of the layers devel and core are not built: the host has them; those of the other
+ * layers (headers and data such as xorgproto, wayland-protocols, tllist) go into the root, the
+ * sysroot of the build. A recipe with split packages never needs its own packages to build; a
+ * split package needs what its recipe needs to build, and its own depends_KEY. */
 static void recipe_deps(const char *name, svec *out)
 {
 	recipe *r = recipe_load(name);
@@ -17,13 +35,20 @@ static void recipe_deps(const char *name, svec *out)
 	recipe_outputs(r, &outputs);
 	rlist(r, "depends", &d);
 	deps_active(r, &d, &act);
-	if (!cfg_on("CROSS") && !cfg_on("HOST_DEPS")) {
-		sv_clear(&d);
-		rlist(r, "makedepends", &d);
-		deps_active(r, &d, &act);
-	}
 	for (size_t i = 0; i < act.n; i++)
 		sv_split_ws(&words, act.v[i]); /* for d in $deps */
+	sv_clear(&d);
+	sv_clear(&act);
+	rlist(r, "makedepends", &d);
+	deps_active(r, &d, &act);
+	bool host_tools = cfg_on("CROSS") || cfg_on("HOST_DEPS");
+	svec mk = SVEC_INIT;
+	for (size_t i = 0; i < act.n; i++)
+		sv_split_ws(&mk, act.v[i]);
+	for (size_t i = 0; i < mk.n; i++)
+		if (!host_tools || !from_host(mk.v[i]))
+			sv_push(&words, mk.v[i]);
+	sv_free(&mk);
 	if (outputs.n == 1) {
 		sv_extend(out, &words);
 	} else {

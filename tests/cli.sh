@@ -348,6 +348,27 @@ sed -i 's/^split=.*/split=(sb-none)/' "$tmp/splbad/sb/recipe"
 if spl -R "$tmp/splbad" build sb >/dev/null 2>"$tmp/err"; then fail "split: a split without files must fail"; fi
 grep -q 'split sb-none: no file of the build matches files_sb_none' "$tmp/err" || fail "split: message: $(cat "$tmp/err")"
 # a build outlives the file of its burn (burn installed a new burn, then builds more): the
+# build tools from the host (--host-deps, cross): makedepends of the layers devel and core are not
+# built, those of other layers (headers, data) go into the root, which is the sysroot of the build
+mkdir -p "$tmp/hdrec"
+hd_recipe() { # NAME CATEGORY [MAKEDEPENDS]
+	mkdir -p "$tmp/hdrec/$1"
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' "name=$1" 'version=1' 'release=1' "summary=\"$1\"" "homepage=https://example.org/$1" \
+		'license=(MIT)' "category=$2" 'build_type=custom' "makedepends=(${3:-})" 'do_install() {' \
+		"	mkdir -p \"\$DESTDIR/usr/share/$1\"" '}' >"$tmp/hdrec/$1/recipe"
+}
+hd_recipe hd-tool devel
+hd_recipe hd-corelib core
+hd_recipe hd-proto platform
+hd_recipe hd-app extra 'hd-tool hd-corelib hd-proto'
+hd() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/hdcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$tmp/hdroot" -R "$tmp/hdrec" "$@"; }
+hd --host-deps -y install hd-app >"$tmp/hd.log" 2>&1 || fail "host-deps: install: $(cat "$tmp/hd.log")"
+[ "$(hd list | awk '{print $1}' | tr '\n' ' ')" = "hd-app hd-proto " ] || fail "host-deps: built: $(hd list)"
+# a native build needs every makedepend in the root (they stay installed, as in Gentoo)
+hd -y install hd-app >"$tmp/hd.log" 2>&1 || fail "native: install: $(cat "$tmp/hd.log")"
+[ "$(hd list | awk '{print $1}' | tr '\n' ' ')" = "hd-app hd-corelib hd-proto hd-tool " ] || fail "native: every makedepend: $(hd list)"
 # helpers of recipe functions still reach the running burn
 mkdir -p "$tmp/self/selfdel"
 cp "$BURN" "$tmp/burn-copy"

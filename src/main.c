@@ -50,7 +50,7 @@ static void usage(FILE *f)
 	      "  -j, --jobs N                parallel build jobs\n"
 	      "  -f, --features \"a -b\"       enable/disable features for this run\n"
 	      "      --target TRIPLE         cross-compile, e.g. aarch64-cleanlinux-linux-gnu\n"
-	      "      --host-deps             take build tools from the host (ignore makedepends)\n"
+	      "      --host-deps             build tools from the host (makedepends of devel and core)\n"
 	      "      --check                 run test suites while building\n"
 	      "      --nodeps                do not resolve dependencies\n"
 	      "      --rebuild               ignore cached builds\n"
