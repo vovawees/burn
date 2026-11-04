@@ -8,6 +8,7 @@
 #   make install         DESTDIR= PREFIX=/usr
 #   make dist            burn-VERSION.tar.gz from git HEAD
 #   make WERROR=1        warnings are errors (CI)
+#   make CURL=1          downloads through libcurl inside burn (HTTP/2, multiplexed), not curl/wget
 
 PREFIX ?= /usr
 BINDIR ?= $(PREFIX)/bin
@@ -23,6 +24,10 @@ WARN += -Werror
 endif
 BURN_CFLAGS := -std=gnu17 -D_GNU_SOURCE $(WARN)
 LDLIBS += -lzstd
+ifeq ($(CURL),1)
+BURN_CFLAGS += -DBURN_CURL $(shell pkg-config --cflags libcurl 2>/dev/null)
+LDLIBS += $(shell pkg-config --libs libcurl 2>/dev/null || echo -lcurl)
+endif
 
 SRC := $(sort $(wildcard src/*.c))
 OBJ := $(SRC:.c=.o)

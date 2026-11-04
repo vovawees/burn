@@ -73,6 +73,16 @@ void warn(const char *fmt, ...)
 	va_end(ap);
 }
 
+void report_error(const char *fmt, ...)
+{
+	char pre[64];
+	va_list ap;
+	snprintf(pre, sizeof pre, "%serror:%s ", c_r, c_0);
+	va_start(ap, fmt);
+	vout(pre, "", fmt, ap);
+	va_end(ap);
+}
+
 void (*die_hook)(void);
 
 void exit_status(int rc)

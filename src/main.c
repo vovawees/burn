@@ -7,6 +7,10 @@
 #include "burn.h"
 #include "vercmp.h"
 
+#ifdef BURN_CURL
+#include <curl/curl.h>
+#endif
+
 static void usage(FILE *f)
 {
 	fputs("burn " BURN_VERSION " - the CleanLinux package manager (source based, rolling+++)\n"
@@ -181,6 +185,9 @@ int main(int argc, char **argv)
 		} else if (is_eq(a, "-V", "--version")) {
 			free(opt);
 			puts("burn " BURN_VERSION);
+#ifdef BURN_CURL
+			printf("downloads: %s\n", curl_version());
+#endif
 			return 0;
 		} else if (!strcmp(a, "--")) {
 			for (i++; i < argc; i++)

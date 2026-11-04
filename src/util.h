@@ -20,6 +20,7 @@ void log_init(void);
 void msg(const char *fmt, ...) PRINTF(1, 2);  /* ==> step */
 void msg2(const char *fmt, ...) PRINTF(1, 2); /*   -> detail */
 void warn(const char *fmt, ...) PRINTF(1, 2);
+void report_error(const char *fmt, ...) PRINTF(1, 2); /* error: ..., and go on */
 NORETURN void die(const char *fmt, ...) PRINTF(1, 2);
 NORETURN void die_errno(const char *fmt, ...) PRINTF(1, 2); /* appends ": strerror(errno)" */
 bool confirm(const char *question);

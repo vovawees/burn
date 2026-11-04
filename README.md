@@ -30,6 +30,7 @@ make proto               # каждая команда против bash-про�
 make check-btrfs         # снимки на настоящей btrfs (loop-устройство; KERNEL=bzImage — в qemu)
 sudo make install        # PREFIX=/usr DESTDIR=: burn и пример burn.conf
 make dist                # burn-VERSION.tar.gz — его собирает рецепт burn
+make CURL=1              # загрузки через libcurl внутри burn: HTTP/2, потоки одного соединения
 ```
 
 Нужны компилятор C17 (GCC или Clang), glibc и libzstd. Для `make proto` ещё bash, GNU tar, zstd, patch, unzip,
@@ -40,7 +41,8 @@ python3, autoconf, cmake, meson и ninja: тестовые рецепты соб
 git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/CleanLinux ../CleanLinux-prototype
 ```
 
-На устройстве burn нужны ещё bash (функции рецептов), git (`sync`), curl или wget (`fetch`) и инструменты сборки.
+На устройстве burn нужны ещё bash (функции рецептов), git (`sync`), curl или wget (`fetch`; со сборкой `CURL=1` —
+libcurl, программа curl не нужна) и инструменты сборки.
 Профили железа ищутся в `BURN_PROFILE_DIR`, `/etc/burn/profiles` и `/usr/share/burn/profiles` (их ставит CleanLinux).
 
 ## Статус переноса
@@ -66,6 +68,7 @@ git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/Clean
 | канал `security`: рецепт перечисляет закрытые уязвимости (`security=(CVE-…)`), `plan` их показывает, `--security` берёт только такие обновления | `plan`, `update`, `lint` | ✅ |
 | подписи пакетов (Ed25519 через `openssl`, доверенные ключи в `/etc/burn/keys`) и бинарный кеш своих машин (`BINARY_CACHES`): чужая сборка берётся только с верной подписью | `key`, `sign`, `verify`, `build`, `install` | ✅ |
 | `COMPILER=clang` (ThinLTO, `lld`, `options=(!clang)` для исключений) и PGO: `PGO=1` + `options=(pgo)` — инструментированная сборка, тренировка `do_pgo` (или `check`), сборка по профилю | `build`, `install` | ✅ |
+| загрузки через libcurl (`make CURL=1`): HTTP/2, все источники `fetch`/`update` — в одном процессе по `FETCH_JOBS`, потоками одного соединения с сервером; повторы как у `curl --retry 3` | `fetch`, `build`, бинарный кеш | ✅ |
 
 C-версия и прототип работают с одной и той же базой и одним кэшем пакетов, так что их можно чередовать
 (сборки знает только C-версия).
