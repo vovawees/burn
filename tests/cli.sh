@@ -246,6 +246,13 @@ printf 'SPIN_PACKAGES=(nosuchpkg)\n' >"$tmp/badspin.conf"
 mkdir -p "$tmp/badspin" && mv "$tmp/badspin.conf" "$tmp/badspin/spin.conf"
 if sp -y spin add "$tmp/badspin" 2>"$tmp/err"; then fail "spin add: unknown package"; fi
 grep -q 'spin badspin: no recipe for nosuchpkg' "$tmp/err" || fail "unknown package message: $(cat "$tmp/err")"
+# SPIN_BASE: the lowest level of the base (CLEANLINUX_BASE of os-release) the spin works on
+mkdir -p "$tmp/newspin" "$tmp/sproot/usr/lib"
+printf 'SPIN_BASE=2\nSPIN_PACKAGES=(spinlib)\n' >"$tmp/newspin/spin.conf"
+printf 'ID=cleanlinux\nCLEANLINUX_BASE=1\n' >"$tmp/sproot/usr/lib/os-release"
+if sp -y spin add "$tmp/newspin" 2>"$tmp/err"; then fail "spin add: SPIN_BASE above the base"; fi
+grep -q 'spin newspin needs CleanLinux base 2, this root has 1' "$tmp/err" || fail "SPIN_BASE message: $(cat "$tmp/err")"
+[ ! -e "$tmp/sproot/var/lib/burn/spins/newspin" ] || fail "SPIN_BASE: no spin left behind"
 [ ! -e "$tmp/sproot/var/lib/burn/spins/badspin" ] || fail "a failed add leaves no spin behind"
 # a newer spin.conf: plan shows the new package, update installs it
 spin_recipe spinextra

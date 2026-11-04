@@ -193,6 +193,7 @@ SPIN_PACKAGES=(labwc foot labwc-spin)    # ставятся с зависимо�
 SPIN_FEATURES="wayland pipewire -x11"    # для всех рецептов, между профилем и burn.conf
 SPIN_SERVICES=(seatd dbus)               # сервисы dinit, включаются при загрузке
 SPIN_USER_SERVICES=(pipewire wireplumber) # сервисы dinit --user, включаются для каждого пользователя
+SPIN_BASE=1                              # необязательно: самый старый уровень базы, на котором она работает
 ```
 
 - `burn spin add <git-url|каталог>` — git-репозиторий клонируется (`--filter=blob:none`) в
@@ -202,7 +203,10 @@ SPIN_USER_SERVICES=(pipewire wireplumber) # сервисы dinit --user, вкл�
   несвежими из-за особенностей сборки (что было несвежим и до неё — дело `burn update`), и включаются
   сервисы: ссылки `$R/etc/dinit.d/boot.d/<имя>` и `$R/etc/dinit.d/user/boot.d/<имя>` (его ждёт
   `dinit --user` у turnstile) на файлы из `/etc/dinit.d` или `/usr/lib/dinit.d`. Сборка без рецепта для
-  какого-нибудь из пакетов не подключается.
+  какого-нибудь из пакетов не подключается, как и сборка с `SPIN_BASE` выше `CLEANLINUX_BASE` из
+  `os-release` корня (`/etc/os-release`, затем `/usr/lib/os-release`; нет поля — уровень 0): уровень
+  контракта базы растёт, когда меняется то, на что сборки полагаются (имена пакетов и features, пути,
+  каталоги сервисов).
 - Что изменил `add`, записано в `$STATE_DIR/spins/<имя>`: источник, время, новые пакеты (всё, чего не было до
   неё, вместе с зависимостями) и включённые им сервисы.
 - `burn sync` после репозиториев рецептов делает `git pull --ff-only` для каждой git-сборки (каталоги —

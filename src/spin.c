@@ -20,6 +20,7 @@
 
 typedef struct {
 	char *name, *dir, *desc;
+	long base; /* SPIN_BASE: the lowest CLEANLINUX_BASE (os-release) it works on, 0: any */
 	svec packages, features, services, user_services;
 } spin;
 
@@ -126,6 +127,12 @@ static bool spin_read(const char *dir, const char *name, const char *def, spin *
 		s->dir = xstrdup(dir);
 		const char *d = sh_get(&e, "SPIN_DESC");
 		s->desc = xstrdup(d ? d : "");
+		const char *base = sh_get(&e, "SPIN_BASE");
+		if (base && *base && !str_uint(base)) {
+			*err = xasprintf("%s/spin.conf: SPIN_BASE=%s is not a number", dir, base);
+			ok = false;
+		}
+		s->base = base && *base && ok ? strtol(base, NULL, 10) : 0;
 		words(&e, "SPIN_PACKAGES", &s->packages);
 		words(&e, "SPIN_FEATURES", &s->features);
 		words(&e, "SPIN_SERVICES", &s->services);
@@ -153,6 +160,35 @@ static bool spin_read(const char *dir, const char *name, const char *def, spin *
 	if (!ok)
 		spin_free(s);
 	return ok;
+}
+
+/* CLEANLINUX_BASE of the root's os-release (/etc first, as os-release(5) says): the level of the
+ * contract between the base and its spins; 0 when there is none */
+static long root_base(void)
+{
+	static const char *const files[] = {"/etc/os-release", "/usr/lib/os-release"};
+	long v = 0;
+	for (size_t i = 0; i < ARRAY_LEN(files); i++) {
+		char *f = xasprintf("%s%s", B.R, files[i]);
+		bool found = is_file(f);
+		if (found) {
+			shenv e;
+			sh_init(&e, NULL, false);
+			shctx c;
+			sh_ctx_init(&c, &e);
+			if (sh_eval_file(&c, f) == 0) {
+				const char *b = sh_get(&e, "CLEANLINUX_BASE");
+				if (b && str_uint(b))
+					v = strtol(b, NULL, 10);
+			}
+			sh_ctx_free(&c);
+			sh_free(&e);
+		}
+		free(f);
+		if (found)
+			break;
+	}
+	return v;
 }
 
 /* every added spin that reads; the broken ones are reported once */
@@ -500,6 +536,14 @@ static int spin_add(int argc, char **argv)
 			rm_rf(tmp);
 		die("spin %s is added already (burn spin remove %s first)", s.name, s.name);
 	}
+	long have = root_base();
+	if (s.base > have) {
+		if (tmp)
+			rm_rf(tmp);
+		die("spin %s needs CleanLinux base %ld, this root has %ld (CLEANLINUX_BASE in os-release; burn update "
+		    "first)",
+		    s.name, s.base, have);
+	}
 	svec stale = SVEC_INIT;
 	stale_packages(&stale);
 	if (local ? symlink(source, dir) < 0 : rename(tmp, dir) < 0) {
@@ -719,6 +763,10 @@ static int spin_show(int argc, char **argv)
 	char *real = path_real(s.dir);
 	kv("name", s.name);
 	kv("description", s.desc);
+	char base[64] = "";
+	if (s.base)
+		snprintf(base, sizeof base, "%ld (this root: %ld)", s.base, root_base());
+	kv("base", base);
 	kv("source", t.source ? t.source : real ? real : "");
 	kv("directory", real ? real : s.dir);
 	kv("commit", c ? c : "");
