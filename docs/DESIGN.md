@@ -160,10 +160,12 @@ VIDEO_CARDS=$HOST_VIDEO_CARDS
 | `VIDEO_CARDS` | драйверы GPU: `amd intel nouveau freedreno panfrost v3d lima etnaviv virgl` (libdrm, Mesa, ядро) |
 | `KERNEL_CONFIG` | полный конфиг ядра вместо defconfig архитектуры |
 | `KERNEL_FRAGMENT` | фрагмент конфига ядра устройства, накладывается последним |
-| `KERNEL_CMDLINE` | параметры ядра устройства (установщик добавляет их в `/etc/kernel/cmdline`) |
+| `KERNEL_CMDLINE` | параметры ядра устройства (пакет `hardware` кладёт их в `/usr/lib/kernel/cmdline.d/`) |
 | `FIRMWARE` | firmware устройства: пути внутри `/usr/lib/firmware` (каталоги или начала имён); пусто — всё |
 | `MODULES` | модули, которые загружаются при старте (`modules-load.d`) |
 | `QUIRKS` | каталог с quirks устройства: дерево `/usr/lib` (`udev/rules.d`, `udev/hwdb.d`, `modprobe.d`, `sysctl.d`, …) |
+| `BOOTLOADER` | чем грузится устройство: `systemd-boot` (UEFI, по умолчанию), `extlinux` (U-Boot), `rpi` (прошивка Raspberry Pi), `android` (boot.img для ABL) |
+| `DEVICE_TREE` | device tree устройства: `vendor/board.dtb` из `/usr/lib/modules/<версия>/dtbs` (или `vendor/` — пусть U-Boot выберет сам) |
 
 Файлы, которые лежат рядом с профилем, указываются через `$PROFILE_DIR` — каталог читаемого файла профиля
 (и у профиля из `inherit` — свой): `QUIRKS="$PROFILE_DIR/steam-deck.d"`. При смене профиля все эти переменные
@@ -420,7 +422,8 @@ $ROOT/var/lib/burn/lock                   блокировка: один burn н
 - `buildid` — первые 12 hex-символов SHA-256 от `rid`, `CHOST`, `CFLAGS`, `CXXFLAGS`, `LDFLAGS` (без флагов, которые
   лишь указывают на корень: где машина держит корень, для которого собирает, сборку не меняет), настроек
   чистки, переменных железа профиля, которые упоминает рецепт (`VIDEO_CARDS`, `KERNEL_CONFIG`,
-  `KERNEL_FRAGMENT`, `FIRMWARE`, `MODULES`, `QUIRKS`; у файлов и каталогов — с содержимым), и SONAME
+  `KERNEL_FRAGMENT`, `KERNEL_CMDLINE`, `FIRMWARE`, `MODULES`, `QUIRKS`, `BOOTLOADER`, `DEVICE_TREE`; у файлов
+  и каталогов — с содержимым), и SONAME
   установленных зависимостей; `COMPILER=clang` и PGO (`PGO=1` у рецепта с `options=(pgo)`) — только когда
   включены. Это имя файла в кеше: смена ABI зависимости никогда не подсунет устаревшую
   сборку. Переменные железа — расхождение с bash-прототипом: у рецептов без них `buildid` тот же.

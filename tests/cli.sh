@@ -44,6 +44,10 @@ printf 'inherit native\nVIDEO_CARDS=amd\nFIRMWARE="amdgpu rtw88"\nQUIRKS="$PROFI
 b -p deck profile show | grep -q "^quirks  *$tmp/profiles/deck.d$" || fail "PROFILE_DIR"
 b -p deck profile show | grep -q '^firmware  *amdgpu rtw88$' || fail "profile: firmware"
 b profile show | grep -q '^firmware  *-$' || fail "profile: hardware variables are reset"
+printf 'inherit deck\nBOOTLOADER=extlinux\nDEVICE_TREE=rockchip/rk3566-x.dtb\n' >"$tmp/profiles/board.profile"
+b -p board profile show | grep -q '^bootloader  *extlinux$' || fail "profile: bootloader"
+b -p board profile show | grep -q '^device_tree  *rockchip/rk3566-x.dtb$' || fail "profile: device_tree"
+b -p deck profile show | grep -q '^device_tree  *-$' || fail "profile: device_tree is reset"
 # VIDEO_CARDS switches the video_cards_CARD features of a recipe; the overrides still apply
 [ "$(b -p deck query bt-hw features)" = "+video_cards_amd -video_cards_intel" ] || fail "video_cards features"
 [ "$(b query bt-hw features)" = "-video_cards_amd -video_cards_intel" ] || fail "video_cards: no cards"
@@ -61,6 +65,9 @@ echo 'two' >"$tmp/profiles/deck.d/a.rules"
 [ "$(hw -p native)" -eq 3 ] || fail "bt-hw: VIDEO_CARDS is part of the build id"
 sed -i 's/rtw88/rtw89/' "$tmp/profiles/deck.profile"
 [ "$(hw -p deck)" -eq 3 ] || fail "bt-hw: FIRMWARE is not used, the build is cached"
+[ "$(hw -p board)" -eq 4 ] || fail "bt-hw: DEVICE_TREE is part of the build id"
+sed -i 's/rk3566-x/rk3566-y/' "$tmp/profiles/board.profile"
+[ "$(hw -p board)" -eq 5 ] || fail "bt-hw: a new DEVICE_TREE, a new build"
 # isolation of the phases: an own network namespace with only lo (up); ISOLATE=0 is the host's
 iso() {
 	env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/isocache$1" BURN_CONFIG="$tmp/iso$1.conf" NO_COLOR=1 \

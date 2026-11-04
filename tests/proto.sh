@@ -482,7 +482,7 @@ c_only() { # LINE: drop the lines of WANT/GOT that differ on purpose
 			edit got.out 's/ extra nonfree \(got / extra (got /'
 			for f in want.err got.err; do edit "$f" 's/^error: lint: [0-9]+ problem/error: lint: N problem/'; done
 			;;
-		*"profile show"*) edit got.out '/^(kernel_config|kernel_fragment|kernel_cmdline|firmware|modules|quirks) /d' ;;
+		*"profile show"*) edit got.out '/^(kernel_config|kernel_fragment|kernel_cmdline|firmware|modules|quirks|bootloader|device_tree) /d' ;;
 		*doctor*)
 			edit got.err '/^warning: .* depends on .*, which is not installed \(burn install .*\)$/d'
 			for f in want.err got.err; do edit "$f" 's/^warning: doctor: [0-9]+ problem/warning: doctor: N problem/'; done

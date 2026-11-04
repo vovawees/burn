@@ -278,9 +278,10 @@ static int profile_command(shctx *c, svec *argv)
 /* profile NAME evaluated into env; 0, or -1 with *err */
 static int profile_eval(shenv *env, const char *name, char **file_out, char **err)
 {
-	static const char *const reset[] = {"VIDEO_CARDS",   "PROFILE_FEATURES", "PROFILE_DESC", "EXTRA_CFLAGS",
+	static const char *const reset[] = {"VIDEO_CARDS",   "PROFILE_FEATURES", "PROFILE_DESC",  "EXTRA_CFLAGS",
 					    "EXTRA_LDFLAGS", "KERNEL_CMDLINE",   "KERNEL_CONFIG", "KERNEL_FRAGMENT",
-					    "FIRMWARE",      "MODULES",          "QUIRKS"};
+					    "FIRMWARE",      "MODULES",          "QUIRKS",        "BOOTLOADER",
+					    "DEVICE_TREE"};
 	sh_set(env, "CARCH", host_arch());
 	sh_set(env, "CPU_FLAGS", "native");
 	for (size_t i = 0; i < ARRAY_LEN(reset); i++)
@@ -422,6 +423,8 @@ static int profile_show(void)
 	kv("firmware", or_dash(cfg("FIRMWARE")));
 	kv("modules", or_dash(cfg("MODULES")));
 	kv("quirks", or_dash(cfg("QUIRKS")));
+	kv("bootloader", or_dash(cfg("BOOTLOADER")));
+	kv("device_tree", or_dash(cfg("DEVICE_TREE")));
 	kv("features", features);
 	kv("cflags", cflags);
 	kv("ldflags", ldflags);

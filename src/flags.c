@@ -422,10 +422,12 @@ static void ccache_setup(build *b)
 }
 
 /* The hardware variables of the profile that change what a recipe builds: the GPU drivers (libdrm,
- * Mesa, the kernel), the kernel configuration, the firmware, modules and quirks of the device. A
- * recipe depends on the ones it mentions; files and directories count with their contents. */
-static const char *const PROFILE_BUILD_VARS[] = {"VIDEO_CARDS", "KERNEL_CONFIG", "KERNEL_FRAGMENT",
-						 "FIRMWARE",    "MODULES",       "QUIRKS"};
+ * Mesa, the kernel), the kernel configuration and command line, the firmware, modules and quirks,
+ * the boot loader and device tree of the device. A recipe depends on the ones it mentions; files
+ * and directories count with their contents. */
+static const char *const PROFILE_BUILD_VARS[] = {"VIDEO_CARDS", "KERNEL_CONFIG", "KERNEL_FRAGMENT", "KERNEL_CMDLINE",
+						 "FIRMWARE",    "MODULES",       "QUIRKS",          "BOOTLOADER",
+						 "DEVICE_TREE"};
 
 static bool mentions(const char *text, const char *word)
 {

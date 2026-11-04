@@ -12,5 +12,5 @@ build_type=custom
 do_build() { :; }
 do_install() {
 	mkdir -p "$DESTDIR/usr/share/bt-hw"
-	printf '%s\n' "$VIDEO_CARDS" "$QUIRKS" >"$DESTDIR/usr/share/bt-hw/hw"
+	printf '%s\n' "$VIDEO_CARDS" "$QUIRKS" "$DEVICE_TREE" >"$DESTDIR/usr/share/bt-hw/hw"
 }
