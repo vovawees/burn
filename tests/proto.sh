@@ -427,9 +427,9 @@ run_one() { # TOOL want|got ARGS...
 snapshot() {
 	(
 		cd "$1" || exit 1
-		find . -path ./var/lib/burn/lock -prune -o -type d -printf '%p d %m\n' -o -printf '%p %y %m %n %T@ %l\n' |
+		find . -path ./var/lib/burn/lock -prune -o -name backup-sums -prune -o -type d -printf '%p d %m\n' -o -printf '%p %y %m %n %T@ %l\n' |
 			awk '$2 != "d" { split($5, t, "."); $5 = t[1] > 1700000000 ? "now" : t[1] } { print }' | LC_ALL=C sort
-		find . -type f ! -path ./var/lib/burn/lock | LC_ALL=C sort | while IFS= read -r f; do
+		find . -type f ! -path ./var/lib/burn/lock ! -name backup-sums | LC_ALL=C sort | while IFS= read -r f; do
 			echo "== $f"
 			case $f in
 				*/history) sed 's/^[0-9-]*T[0-9:]*Z|/DATE|/' "$f" ;;
@@ -462,6 +462,27 @@ snapshot_cache() {
 			echo "== $f $(sha256sum <"$f")"
 		done
 	)
+}
+
+# What only burn in C knows (the prototype is frozen at the tag burn-prototype): split packages
+# (their own lines in search, a split line in info, lint knows their names), the category
+# nonfree and the options late, pgo and !clang, the hardware variables of profiles and the
+# backup-sums of the database (three-way backup files; left out of the root snapshots above)
+splits=$(sed -n 's/^split=(\(.*\))/\1/p' "$recipes"/*/recipe "$tmp"/fixtures/*/recipe | tr -s ' \t' '\n' |
+	sed '/^$/d' | paste -sd'|' -)
+c_only() { # LINE: drop the lines of WANT/GOT that differ on purpose
+	edit() { sed -E "$2" "$tmp/$1" >"$tmp/$1.tmp" && mv "$tmp/$1.tmp" "$tmp/$1"; }
+	case $1 in
+		search*) [ -z "$splits" ] || edit got.out "/^($splits) /d" ;;
+		info*) edit got.out '/^split  /d' ;;
+		lint*)
+			[ -z "$splits" ] || edit want.out "/: unknown dependency '($splits)'\$/d"
+			edit want.out "/: unknown option '(late|pgo|!clang)'\$/d; /: category must be one of: .* \(got 'nonfree'\)\$/d"
+			edit got.out 's/ extra nonfree \(got / extra (got /'
+			for f in want.err got.err; do edit "$f" 's/^error: lint: [0-9]+ problem/error: lint: N problem/'; done
+			;;
+		*"profile show"*) edit got.out '/^(kernel_config|kernel_fragment|kernel_cmdline|firmware|modules|quirks) /d' ;;
+	esac
 }
 
 cp -a "$root" "$tmp/want.root"
@@ -518,6 +539,7 @@ while IFS= read -r line; do
 			for f in want got; do sed "s/^${today}T[0-9:]*Z /DATE /" "$tmp/$f.out" >"$tmp/$f.tmp" && mv "$tmp/$f.tmp" "$tmp/$f.out"; done
 			;;
 	esac
+	c_only "$line"
 	for s in out err; do
 		if ! cmp -s "$tmp/want.$s" "$tmp/got.$s"; then
 			fail=$((fail + 1))
