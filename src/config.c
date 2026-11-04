@@ -256,7 +256,13 @@ static int profile_command(shctx *c, svec *argv)
 		return sh_error(c, "inherit %s: profiles inherit too deep (a cycle?)", name);
 	}
 	st->depth++;
+	char *saved = xstrdup(sh_get(c->env, "PROFILE_DIR") ? sh_get(c->env, "PROFILE_DIR") : "");
+	char *dir = path_dir(p);
+	sh_set(c->env, "PROFILE_DIR", dir);
 	int rc = sh_eval_file(c, p);
+	sh_set(c->env, "PROFILE_DIR", saved);
+	free(dir);
+	free(saved);
 	st->depth--;
 	free(p);
 	return rc < 0 ? -1 : 0;
@@ -265,8 +271,9 @@ static int profile_command(shctx *c, svec *argv)
 /* profile NAME evaluated into env; 0, or -1 with *err */
 static int profile_eval(shenv *env, const char *name, char **file_out, char **err)
 {
-	static const char *const reset[] = {"VIDEO_CARDS", "PROFILE_FEATURES", "PROFILE_DESC", "EXTRA_CFLAGS",
-					    "EXTRA_LDFLAGS", "KERNEL_CMDLINE", "KERNEL_CONFIG"};
+	static const char *const reset[] = {"VIDEO_CARDS",   "PROFILE_FEATURES", "PROFILE_DESC", "EXTRA_CFLAGS",
+					    "EXTRA_LDFLAGS", "KERNEL_CMDLINE",   "KERNEL_CONFIG", "KERNEL_FRAGMENT",
+					    "FIRMWARE",      "MODULES",          "QUIRKS"};
 	sh_set(env, "CARCH", host_arch());
 	sh_set(env, "CPU_FLAGS", "native");
 	for (size_t i = 0; i < ARRAY_LEN(reset); i++)
@@ -293,7 +300,13 @@ static int profile_eval(shenv *env, const char *name, char **file_out, char **er
 	sh_ctx_init(&c, env);
 	c.command = profile_command;
 	c.user = &st;
+	/* PROFILE_DIR: the directory of the profile file being read, for the files that come with it
+	 * (KERNEL_FRAGMENT="$PROFILE_DIR/steam-deck.config", QUIRKS="$PROFILE_DIR/steam-deck.d") */
+	char *pdir = path_dir(file);
+	sh_set(env, "PROFILE_DIR", pdir);
+	free(pdir);
 	int rc = sh_eval_file(&c, file);
+	sh_unset(env, "PROFILE_DIR");
 	if (rc < 0) {
 		*err = c.err;
 		c.err = NULL;
@@ -396,6 +409,12 @@ static int profile_show(void)
 	kv("cross", cfg("CROSS"));
 	kv("cpu", cfg("CPU_CFLAGS"));
 	kv("video_cards", or_dash(cfg("VIDEO_CARDS")));
+	kv("kernel_config", or_dash(cfg("KERNEL_CONFIG")));
+	kv("kernel_fragment", or_dash(cfg("KERNEL_FRAGMENT")));
+	kv("kernel_cmdline", or_dash(cfg("KERNEL_CMDLINE")));
+	kv("firmware", or_dash(cfg("FIRMWARE")));
+	kv("modules", or_dash(cfg("MODULES")));
+	kv("quirks", or_dash(cfg("QUIRKS")));
 	kv("features", features);
 	kv("cflags", cflags);
 	kv("ldflags", ldflags);

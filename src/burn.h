@@ -87,6 +87,7 @@ void features_resolve(recipe *r);
 char *features_string(const recipe *r); /* "+a -b" sorted by name */
 bool recipe_use(const recipe *r, const char *feat);
 void deps_active(const recipe *r, const svec *deps, svec *out);
+void files_under(const char *dir, svec *out); /* regular files below dir, recursively, sorted */
 char *recipe_rid(const recipe *r);
 /* the prototype's recipe_reset as shell code, with RECIPE_FILE and RECIPE_DIR (for env.sh) */
 void recipe_reset_sh(const recipe *r, sbuf *s);

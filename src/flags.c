@@ -8,6 +8,7 @@
  */
 #include "burn.h"
 
+#include <ctype.h>
 #include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -397,9 +398,55 @@ static void ccache_setup(build *b)
 	free(cc);
 }
 
-/* Identity of the exact build: recipe + toolchain + flags + the ABI (sonames) of the installed
- * dependencies. It names the cached package, so a soname bump of a dependency never reuses a
- * stale build. */
+/* The hardware variables of the profile that change what a recipe builds: the GPU drivers (libdrm,
+ * Mesa, the kernel), the kernel configuration, the firmware, modules and quirks of the device. A
+ * recipe depends on the ones it mentions; files and directories count with their contents. */
+static const char *const PROFILE_BUILD_VARS[] = {"VIDEO_CARDS", "KERNEL_CONFIG", "KERNEL_FRAGMENT",
+						 "FIRMWARE",    "MODULES",       "QUIRKS"};
+
+static bool mentions(const char *text, const char *word)
+{
+	size_t n = strlen(word);
+	for (const char *p = text; (p = strstr(p, word)); p += n) {
+		bool before = p == text || !(isalnum((unsigned char)p[-1]) || p[-1] == '_');
+		bool after = !(isalnum((unsigned char)p[n]) || p[n] == '_');
+		if (before && after)
+			return true;
+	}
+	return false;
+}
+
+static void profile_vars_id(const recipe *r, sbuf *s)
+{
+	char *text = file_read(r->file, NULL);
+	if (!text)
+		return;
+	for (size_t i = 0; i < ARRAY_LEN(PROFILE_BUILD_VARS); i++) {
+		const char *v = PROFILE_BUILD_VARS[i], *val = cfg(v);
+		if (!mentions(text, v))
+			continue;
+		sb_addf(s, "%s=%s\n", v, val);
+		struct stat st;
+		if (!*val || stat(val, &st) != 0)
+			continue;
+		svec files = SVEC_INIT;
+		if (S_ISDIR(st.st_mode))
+			files_under(val, &files);
+		else if (S_ISREG(st.st_mode))
+			sv_push(&files, val);
+		for (size_t f = 0; f < files.n; f++) {
+			char hex[65];
+			if (sha256_file(files.v[f], hex) == 0)
+				sb_addf(s, "  %s %s\n", files.v[f] + strlen(val), hex);
+		}
+		sv_free(&files);
+	}
+	free(text);
+}
+
+/* Identity of the exact build: recipe + toolchain + flags + the hardware variables of the profile
+ * it uses + the ABI (sonames) of the installed dependencies. It names the cached package, so a
+ * soname bump of a dependency never reuses a stale build. */
 static char *recipe_buildid(build *b)
 {
 	recipe *r = b->r;
@@ -411,6 +458,7 @@ static char *recipe_buildid(build *b)
 		bget(b, "LDFLAGS"));
 	sb_addf(&s, "%s%s%s%s %s\n", bget(b, "KEEP_DOCS"), bget(b, "KEEP_INFO"), bget(b, "KEEP_MAN"),
 		bget(b, "STRIP_BINARIES"), bget(b, "LOCALES"));
+	profile_vars_id(r, &s);
 	svec deps = SVEC_INIT, act = SVEC_INIT;
 	rlist(r, "depends", &deps);
 	deps_active(r, &deps, &act);

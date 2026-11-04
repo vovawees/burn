@@ -35,6 +35,27 @@ b profile show | grep -q '^description  *Test machine$' || fail "profile show"
 b -p handheld profile show | grep -q '^video_cards  *amdgpu$' || fail "profile inherit"
 [ "$(b profile list | grep -c .)" -ge 2 ] || fail "profile list"
 if b -p nosuchprofile profile show 2>/dev/null; then fail "unknown profile must fail"; fi
+# hardware variables: files next to the profile ($PROFILE_DIR), reset between profiles, part of
+# the build id of the recipes that use them (and only of those)
+mkdir -p "$tmp/profiles/deck.d" "$tmp/hwroot"
+echo 'one' >"$tmp/profiles/deck.d/a.rules"
+# shellcheck disable=SC2016 # the profile expands $PROFILE_DIR itself
+printf 'inherit native\nVIDEO_CARDS=amd\nFIRMWARE="amdgpu rtw88"\nQUIRKS="$PROFILE_DIR/deck.d"\n' >"$tmp/profiles/deck.profile"
+b -p deck profile show | grep -q "^quirks  *$tmp/profiles/deck.d$" || fail "PROFILE_DIR"
+b -p deck profile show | grep -q '^firmware  *amdgpu rtw88$' || fail "profile: firmware"
+b profile show | grep -q '^firmware  *-$' || fail "profile: hardware variables are reset"
+hw() {
+	env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/hwcache" NO_COLOR=1 "$BURN" -r "$tmp/hwroot" \
+		-R "$fixtures" --host-deps -y "$@" build bt-hw >"$tmp/hw.log" 2>&1 || fail "build bt-hw $*: $(cat "$tmp/hw.log")"
+	find "$tmp/hwcache/packages" -name 'bt-hw-*' | wc -l
+}
+[ "$(hw -p deck)" -eq 1 ] || fail "bt-hw: first build"
+[ "$(hw -p deck)" -eq 1 ] || fail "bt-hw: same profile, cached build"
+echo 'two' >"$tmp/profiles/deck.d/a.rules"
+[ "$(hw -p deck)" -eq 2 ] || fail "bt-hw: the contents of QUIRKS are part of the build id"
+[ "$(hw -p native)" -eq 3 ] || fail "bt-hw: VIDEO_CARDS is part of the build id"
+sed -i 's/rtw88/rtw89/' "$tmp/profiles/deck.profile"
+[ "$(hw -p deck)" -eq 3 ] || fail "bt-hw: FIRMWARE is not used, the build is cached"
 # the database
 db=$tmp/root/var/lib/burn/installed
 mkdir -p "$db/zstd" "$tmp/root/var/lib/burn/state"

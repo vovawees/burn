@@ -378,6 +378,15 @@ static void walk_files(const char *dir, bool with_recipe, svec *out)
 	closedir(d);
 }
 
+void files_under(const char *dir, svec *out)
+{
+	svec part = SVEC_INIT;
+	walk_files(dir, true, &part);
+	sv_sort(&part);
+	sv_extend(out, &part);
+	sv_free(&part);
+}
+
 void recipe_files(const recipe *r, bool with_recipe, svec *out)
 {
 	struct stat st;
