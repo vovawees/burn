@@ -10,8 +10,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fnmatch.h>
+#include <ftw.h>
 #include <glob.h>
 #include <inttypes.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -131,7 +133,112 @@ static int step_child(void *arg)
 	return bt_run(j->type, j->step, &c);
 }
 
-static char *phase_cleanup; /* a file to remove when a phase fails */
+static char *phase_cleanup;  /* a file to remove when a phase fails */
+static bool phase_keep_user; /* burn unpack: no BUILD_USER */
+
+/* ---- isolation of the phases (ISOLATE, BUILD_USER) ---- */
+
+static isolation ISO;
+static int iso_state = -1; /* -1: not tried yet, 0: off, 1: ISO */
+
+static int iso_try_child(void *arg)
+{
+	const char *what;
+	if (isolate(arg, &what) < 0) {
+		printf("%s: %s", what, strerror(errno));
+		return 1;
+	}
+	return 0;
+}
+
+/* NULL when S works here (a child process tries it), else what failed */
+static char *iso_try(const isolation *s)
+{
+	sbuf out = SBUF_INIT;
+	run_opts o = {.out = &out};
+	if (!run_func(iso_try_child, (void *)s, &o)) {
+		sb_free(&out);
+		return NULL;
+	}
+	if (!out.len)
+		sb_adds(&out, "failed");
+	return sb_steal(&out);
+}
+
+/* the isolation of the build phases, decided once: ISOLATE=auto takes what the kernel allows
+ * (and says what it cannot), 1 requires all of it, 0 is none */
+static const isolation *iso_get(void)
+{
+	if (iso_state >= 0)
+		return iso_state ? &ISO : NULL;
+	iso_state = 0;
+	const char *mode = cfg("ISOLATE");
+	bool strict = !strcmp(mode, "1");
+	if (!strcmp(mode, "0"))
+		return NULL;
+	if (!strict && strcmp(mode, "auto"))
+		die("ISOLATE=%s: auto, 1 or 0", mode);
+	isolation s = {.net = true, .userns = geteuid() != 0};
+	const char *user = cfg("BUILD_USER");
+	if (!s.userns && *user) {
+		struct passwd *pw = getpwnam(user);
+		if (pw && pw->pw_uid) {
+			s.drop = true;
+			s.uid = pw->pw_uid;
+			s.gid = pw->pw_gid;
+		} else if (strict) {
+			die("ISOLATE=1: no user %s (BUILD_USER) to build as", user);
+		} else {
+			msg2("build isolation: no user %s (BUILD_USER), the builds run as root", user);
+		}
+	}
+	char *err = iso_try(&s);
+	if (err && s.drop) { /* root of a user namespace that maps no other uid, for example */
+		isolation t = s;
+		t.drop = false;
+		char *err2 = iso_try(&t);
+		if (!err2) {
+			if (strict)
+				die("ISOLATE=1: cannot build as %s: %s", user, err);
+			msg2("build isolation: cannot build as %s (%s), the builds run as root", user, err);
+			free(err);
+			err = NULL;
+			s = t;
+		}
+		free(err2);
+	}
+	if (err) {
+		if (strict)
+			die("ISOLATE=1: %s", err);
+		msg2("build isolation unavailable (%s): the builds can reach the network", err);
+		free(err);
+		return NULL;
+	}
+	ISO = s;
+	iso_state = 1;
+	return &ISO;
+}
+
+static uid_t own_uid;
+static gid_t own_gid;
+
+static int own_one(const char *path, const struct stat *st, int flag, struct FTW *ftw)
+{
+	(void)flag;
+	(void)ftw;
+	if ((st->st_uid != own_uid || st->st_gid != own_gid) && lchown(path, own_uid, own_gid) < 0)
+		return -1;
+	return 0;
+}
+
+/* chown -hR: the tree the build user writes to (made by burn as root) */
+static void own_tree(const char *dir, const isolation *iso)
+{
+	own_uid = iso->uid;
+	own_gid = iso->gid;
+	if (mkdir_p(dir, 0755) < 0 || nftw(dir, own_one, 32, FTW_PHYS) != 0)
+		die_errno("cannot give %s to the build user", dir);
+}
 
 /* phase LABEL: the recipe function FN (bash, in SRC) or the STEP of the build type (C), with the
  * output in the log (and on stderr with -v); a failure shows the end of the log and stops */
@@ -140,7 +247,19 @@ static void phase(build *b, const char *label, const char *fn, const char *type,
 	msg2("%s", label);
 	svec env = SVEC_INIT;
 	build_environ(b, &env);
-	run_opts o = {.envp = sv_argv(&env), .log_fd = b->log_fd, .tee = B.verbose};
+	run_opts o = {.envp = sv_argv(&env), .log_fd = b->log_fd, .tee = B.verbose, .iso = iso_get()};
+	/* the one step that needs the network: cargo fetch --locked (checked against Cargo.lock);
+	 * burn unpack leaves the sources to the one who asked, also to root */
+	isolation one;
+	if (o.iso && type && !strcmp(label, "prepare") && !strcmp(type, "cargo")) {
+		one = *o.iso;
+		one.net = false;
+		o.iso = one.drop ? &one : NULL;
+	} else if (o.iso && o.iso->drop && phase_keep_user) {
+		one = *o.iso;
+		one.drop = false;
+		o.iso = &one;
+	}
 	int rc;
 	if (fn) {
 		svec argv = SVEC_INIT;
@@ -884,6 +1003,21 @@ char *build_pkg(const char *pkgname)
 	char *mf = xasprintf("-j%s", bget(&b, "JOBS"));
 	bexport(&b, "MAKEFLAGS", mf);
 	free(mf);
+	const isolation *iso = iso_get();
+	if (iso && iso->drop) { /* the build user writes the work tree, its HOME and the caches */
+		char *home = path_join(work, "home");
+		mkdirs(home);
+		bexport(&b, "HOME", home);
+		free(home);
+		own_tree(work, iso);
+		if (!strcmp(type, "cargo")) {
+			char *cargo = path_join(bget(&b, "CACHE_DIR"), "cargo");
+			own_tree(cargo, iso);
+			free(cargo);
+		}
+		if (*bget(&b, "CCACHE_DIR"))
+			own_tree(bget(&b, "CCACHE_DIR"), iso);
+	}
 	char *envfile = path_join(work, "env.sh");
 	shrun_write_env(&b, type, envfile);
 	free(envfile);
@@ -980,7 +1114,9 @@ int cmd_unpack(int argc, char **argv)
 		close(fd);
 		shrun_write_env(&b, NULL, envfile);
 		phase_cleanup = envfile;
+		phase_keep_user = true;
 		phase(&b, "prepare", "do_prepare", NULL, NULL);
+		phase_keep_user = false;
 		phase_cleanup = NULL;
 		unlink(envfile);
 		free(envfile);

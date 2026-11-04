@@ -61,6 +61,7 @@ git clone -q --depth 1 --branch burn-prototype https://github.com/vovawees/Clean
 | split-пакеты: одна сборка — несколько пакетов (`split=(gcc-libs)`, `files_gcc_libs=(…)`), каждый ставится сам по себе, файлы переходят между пакетами рецепта при обновлении | `install`, `info`, `search`, `lint` | ✅ |
 | сборки (spins): репозиторий или каталог со `spin.conf` и своими рецептами — пакеты, особенности и сервисы сборки ставятся, обновляются (`sync`, `update`) и удаляются через burn | `spin add`, `spin remove`, `spin list`, `spin show` | ✅ |
 | `VIDEO_CARDS` профиля включает особенности `video_cards_<карта>` рецепта (как USE_EXPAND в Gentoo): зависимость может идти за GPU — `llvm:video_cards_intel` | `query`, `build` | ✅ |
+| изоляция сборки: фазы без сети (своё сетевое пространство имён, только `lo`), от root — от непривилегированного `BUILD_USER` (`ISOLATE=auto\|1\|0`) | `build`, `install` | ✅ |
 | SHA-256 на SHA-NI (x86-64, выбор по cpuid) | `fetch`, `checksum`, `build` | ✅ |
 
 C-версия и прототип работают с одной и той же базой и одним кэшем пакетов, так что их можно чередовать

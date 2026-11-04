@@ -8,6 +8,7 @@
  */
 #include "burn.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -78,11 +79,16 @@ void shrun_write_env(build *b, const char *type, const char *file)
 	sb_adds(&s, "set --\nset -o errexit -o nounset -o pipefail\nshopt -s nullglob extglob inherit_errexit\n");
 	sb_adds(&s, "# the configuration\n");
 	put_layer(&s, &B.cfg);
-	/* the helpers call back into exactly this burn: /proc/PID/exe stays valid while it runs, also
-	 * when an update has replaced the file meanwhile (burn installing burn, then building more) */
+	/* the helpers call back into exactly this burn, also when an update has replaced the file
+	 * meanwhile (burn installing burn, then building more): a descriptor of it that the phases
+	 * inherit (/proc/PID/exe of burn is not readable from the user namespace of an isolated
+	 * phase) */
+	static int self_fd = -1;
+	if (self_fd < 0)
+		self_fd = open("/proc/self/exe", O_RDONLY);
 	char self[32];
-	snprintf(self, sizeof self, "/proc/%ld/exe", (long)getpid());
-	put_scalar(&s, "BURN_SELF", access(self, X_OK) == 0 ? self : "burn");
+	snprintf(self, sizeof self, "/proc/self/fd/%d", self_fd);
+	put_scalar(&s, "BURN_SELF", self_fd >= 0 && access(self, X_OK) == 0 ? self : "burn");
 	put_scalar(&s, "BURN_VERSION", BURN_VERSION);
 	put_scalar(&s, "CLI_FEATURES", B.cli_features ? B.cli_features : "");
 	static const struct {

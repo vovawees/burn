@@ -3,13 +3,94 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
+#include <net/if.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/prctl.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 extern char **environ;
+
+static int write_proc(const char *file, const char *text)
+{
+	int fd = open(file, O_WRONLY | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	ssize_t n = write(fd, text, strlen(text));
+	int e = errno;
+	close(fd);
+	errno = e;
+	return n == (ssize_t)strlen(text) ? 0 : -1;
+}
+
+/* the loopback interface of a new network namespace starts down: tests listen on 127.0.0.1 */
+static int loopback_up(void)
+{
+	int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (fd < 0)
+		return -1;
+	struct ifreq ifr;
+	memset(&ifr, 0, sizeof ifr);
+	memcpy(ifr.ifr_name, "lo", 3);
+	int rc = ioctl(fd, SIOCGIFFLAGS, &ifr);
+	if (rc == 0) {
+		ifr.ifr_flags |= IFF_UP;
+		rc = ioctl(fd, SIOCSIFFLAGS, &ifr);
+	}
+	int e = errno;
+	close(fd);
+	errno = e;
+	return rc;
+}
+
+int isolate(const isolation *s, const char **what)
+{
+	if (s->userns) {
+		/* our ids must be written before anything else needs them */
+		uid_t uid = geteuid();
+		gid_t gid = getegid();
+		char map[64];
+		*what = "unshare(CLONE_NEWUSER|CLONE_NEWNET)";
+		if (unshare(CLONE_NEWUSER | (s->net ? CLONE_NEWNET : 0)) < 0)
+			return -1;
+		*what = "/proc/self/uid_map";
+		snprintf(map, sizeof map, "%u %u 1\n", (unsigned)uid, (unsigned)uid);
+		if (write_proc("/proc/self/uid_map", map) < 0)
+			return -1;
+		*what = "/proc/self/setgroups";
+		if (write_proc("/proc/self/setgroups", "deny\n") < 0 && errno != ENOENT)
+			return -1;
+		*what = "/proc/self/gid_map";
+		snprintf(map, sizeof map, "%u %u 1\n", (unsigned)gid, (unsigned)gid);
+		if (write_proc("/proc/self/gid_map", map) < 0)
+			return -1;
+	} else if (s->net) {
+		*what = "unshare(CLONE_NEWNET)";
+		if (unshare(CLONE_NEWNET) < 0)
+			return -1;
+	}
+	if (s->net) {
+		*what = "loopback up";
+		if (loopback_up() < 0)
+			return -1;
+	}
+	if (s->drop) {
+		*what = "setgroups/setgid/setuid";
+		if (setgroups(0, NULL) < 0 || setgid(s->gid) < 0 || setuid(s->uid) < 0)
+			return -1;
+	}
+	/* no way back to privileges: setuid programs (su, sudo, fusermount3) do not raise them */
+	*what = "PR_SET_NO_NEW_PRIVS";
+	if ((s->drop || s->userns) && prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
+		return -1;
+	return 0;
+}
 
 /* the child's side of run_opts: working directory, redirections, environment */
 static void child_setup(const run_opts *o, int pipe_w)
@@ -45,6 +126,12 @@ static void child_setup(const run_opts *o, int pipe_w)
 	}
 	if (null > 2)
 		close(null);
+	const char *what;
+	if (o->iso && isolate(o->iso, &what) < 0) {
+		fprintf(stderr, "burn: build isolation: %s: %s (ISOLATE=0 in burn.conf turns it off)\n", what,
+			strerror(errno));
+		_exit(127);
+	}
 	if (o->envp)
 		environ = o->envp; /* execvp searches the PATH of the new environment */
 	if (o->cwd) { /* (cd DIR && PROG): PWD is the logical path */

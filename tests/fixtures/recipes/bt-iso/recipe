@@ -1,0 +1,22 @@
+name=bt-iso
+version=1.0
+summary="isolation of the build phases: what a build sees of the network and of its user"
+homepage=https://example.org/bt-iso
+license=(MIT)
+category=extra
+build_type=custom
+
+do_build() {
+	echo "netns=$(readlink /proc/self/ns/net)"
+	echo "uid=$(id -u) home=$HOME"
+	echo "ifaces=$(sed -n 's/^ *\([^:]*\):.*/\1/p' /proc/net/dev | tr '\n' ' ')"
+	# lo is up: refused at once; nothing else routes
+	if (exec 3<>/dev/tcp/127.0.0.1/9) 2>"$BUILD/lo.err"; then echo "lo: connected"; fi
+	echo "lo=$(sed 's/.*: //' "$BUILD/lo.err" | tr -d '\n')"
+	if (exec 3<>/dev/tcp/192.0.2.1/9) 2>"$BUILD/net.err"; then echo "net: connected"; fi
+	echo "net=$(sed 's/.*: //' "$BUILD/net.err" | tr -d '\n')"
+}
+
+do_install() {
+	install -Dm644 /dev/null "$DESTDIR/usr/share/bt-iso/done"
+}

@@ -61,6 +61,26 @@ echo 'two' >"$tmp/profiles/deck.d/a.rules"
 [ "$(hw -p native)" -eq 3 ] || fail "bt-hw: VIDEO_CARDS is part of the build id"
 sed -i 's/rtw88/rtw89/' "$tmp/profiles/deck.profile"
 [ "$(hw -p deck)" -eq 3 ] || fail "bt-hw: FIRMWARE is not used, the build is cached"
+# isolation of the phases: an own network namespace with only lo (up); ISOLATE=0 is the host's
+iso() {
+	env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/isocache$1" BURN_CONFIG="$tmp/iso$1.conf" NO_COLOR=1 \
+		"$BURN" -r "$tmp/isoroot" -R "$fixtures" --host-deps -y build bt-iso >"$tmp/iso.log" 2>&1 ||
+		fail "build bt-iso: $(cat "$tmp/iso.log")"
+	sed -n 's/^\(netns\|ifaces\|lo\|net\)=//p' "$tmp/isocache$1/logs/bt-iso-1.0-1.log"
+}
+: >"$tmp/iso1.conf"
+echo ISOLATE=0 >"$tmp/iso0.conf"
+host_ns=$(readlink /proc/self/ns/net)
+if [ "$(iso 0 | head -n 1)" != "$host_ns" ]; then fail "ISOLATE=0: the host's network"; fi
+if grep -q 'build isolation unavailable' "$tmp/iso.log"; then
+	echo "cli: no user and network namespaces here, isolation not tested" >&2
+else
+	iso 1 >"$tmp/iso.out"
+	[ "$(sed -n 1p "$tmp/iso.out")" != "$host_ns" ] || fail "isolation: own network namespace"
+	[ "$(sed -n 2p "$tmp/iso.out")" = "lo " ] || fail "isolation: only lo"
+	sed -n 3p "$tmp/iso.out" | grep -q 'Connection refused' || fail "isolation: lo is up"
+	sed -n 4p "$tmp/iso.out" | grep -q 'Network is unreachable' || fail "isolation: no route out"
+fi
 # the database
 db=$tmp/root/var/lib/burn/installed
 mkdir -p "$db/zstd" "$tmp/root/var/lib/burn/state"

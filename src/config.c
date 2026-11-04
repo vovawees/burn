@@ -104,6 +104,8 @@ void config_defaults(void)
 		{"STRIP_BINARIES", "1"},
 		{"LTO", "1"},
 		{"CHECK", "0"},
+		{"ISOLATE", "auto"},
+		{"BUILD_USER", "burn"},
 		{"HOST_DEPS", "0"},
 		{"CCACHE", "0"},
 		{"CCACHE_SIZE", "5G"},
