@@ -207,6 +207,8 @@ void remove_packages(const svec *names);
 int cmd_rollback(int argc, char **argv);
 int cmd_clone(int argc, char **argv);
 void abi_followup(void); /* rebuild the packages linked against sonames this command took away */
+/* build NAMES in this order, installing each right away (op: the history word, NULL: install) */
+void build_install(const svec *names, const char *op);
 
 /* ---- update.c ---- */
 int cmd_sync(int argc, char **argv);

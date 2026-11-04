@@ -406,6 +406,26 @@ bk remove bk >/dev/null 2>&1 && [ "$(cat "$bkc.burnsave")" = mine ] || fail "bac
 rm -f "$bkc".*
 bk install bk >/dev/null 2>&1 && bk remove bk >/dev/null 2>&1 || fail "backup: install and remove"
 [ ! -e "$bkc" ] && [ ! -e "$bkc.burnsave" ] || fail "backup: an untouched file goes with the package"
+# options=(late): built after the update is applied, against the updated system (kernel modules)
+mkdir -p "$tmp/ltrec/lt-kernel" "$tmp/ltrec/lt-mod"
+lt_recipes() { # KERNEL-VERSION MODULE-RELEASE
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' 'name=lt-kernel' "version=$1" 'release=1' 'summary="a kernel"' 'homepage=https://example.org/lt' \
+		'license=(MIT)' 'category=extra' 'build_type=custom' 'do_install() {' \
+		'	mkdir -p "$DESTDIR/usr/share/lt"' "	echo $1 >\"\$DESTDIR/usr/share/lt/kernel\"" '}' >"$tmp/ltrec/lt-kernel/recipe"
+	# shellcheck disable=SC2016 # the recipe expands these
+	printf '%s\n' 'name=lt-mod' 'version=1' "release=$2" 'summary="a module"' 'homepage=https://example.org/lt' \
+		'license=(MIT)' 'category=extra' 'build_type=custom' 'depends=(lt-kernel)' 'options=(late)' 'do_install() {' \
+		'	mkdir -p "$DESTDIR/usr/share/lt"' '	cp "$SYSROOT/usr/share/lt/kernel" "$DESTDIR/usr/share/lt/built-for"' \
+		'}' >"$tmp/ltrec/lt-mod/recipe"
+}
+lt() { env BURN_PROFILE_DIR="$tmp/profiles" BURN_CACHE="$tmp/ltcache" HOST_VIDEO_CARDS= NO_COLOR=1 "$BURN" \
+	-r "$tmp/ltroot" -R "$tmp/ltrec" -y "$@"; }
+lt_recipes 1 1 && lt install lt-mod >"$tmp/lt.log" 2>&1 || fail "late: install: $(cat "$tmp/lt.log")"
+[ "$(cat "$tmp/ltroot/usr/share/lt/built-for")" = 1 ] || fail "late: install builds against the installed kernel"
+lt_recipes 2 2 && lt --no-sync update >"$tmp/lt.log" 2>&1 || fail "late: update: $(cat "$tmp/lt.log")"
+grep -q 'Building against the updated system: lt-mod' "$tmp/lt.log" || fail "late: message: $(cat "$tmp/lt.log")"
+[ "$(cat "$tmp/ltroot/usr/share/lt/built-for")" = 2 ] || fail "late: update builds against the new kernel"
 # helpers of recipe functions still reach the running burn
 mkdir -p "$tmp/self/selfdel"
 cp "$BURN" "$tmp/burn-copy"

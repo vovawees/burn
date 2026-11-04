@@ -22,8 +22,10 @@ const char *const RECIPE_VARS[] = {
 const char *const RECIPE_CATEGORIES[] = {"core",     "devel",    "meta",  "kernel",  "firmware",
 					 "drivers",  "platform", "extra", "nonfree", NULL};
 const char *const BUILD_TYPES[] = {"autotools", "meson", "cmake", "make", "cargo", "python", "custom", "meta", NULL};
+/* late: built after an update is applied, against the updated system (out-of-tree kernel modules
+ * need the new kernel) */
 const char *const RECIPE_OPTIONS[] = {"!lto",       "!strip",    "!hardening", "!prune",
-				      "!linker",    "staticlibs", "emptydirs", "o3", NULL};
+				      "!linker",    "staticlibs", "emptydirs", "o3", "late", NULL};
 
 static const char *const ARRAY_VARS[] = {"license",   "source",         "sha256",     "depends",    "makedepends",
 					 "features",  "patches",        "options",    "backup",     "noextract",

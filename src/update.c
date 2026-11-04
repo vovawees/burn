@@ -426,13 +426,20 @@ int cmd_update(int argc, char **argv)
 	if (!confirm(q))
 		die("aborted, nothing changed");
 	free(q);
-	svec order = SVEC_INIT, files = SVEC_INIT;
+	svec order = SVEC_INIT, files = SVEC_INIT, late = SVEC_INIT;
 	deps_order_set(&todo, &order);
 	/* 1) fetch and verify every source, then build everything: the running system is untouched
-	 *    until every build succeeded */
+	 *    until every build succeeded. options=(late) waits for the applied update (step 5). */
 	prefetch(&order);
-	for (size_t i = 0; i < order.n; i++)
-		sv_push_own(&files, build_pkg(order.v[i]));
+	for (size_t i = 0; i < order.n; i++) {
+		recipe *r = recipe_load(order.v[i]);
+		bool is_late = rhas_option(r, "late");
+		recipe_free(r);
+		if (is_late)
+			sv_push(&late, order.v[i]);
+		else
+			sv_push_own(&files, build_pkg(order.v[i]));
+	}
 	/* 2) the rollback point: a btrfs snapshot, then the pre-update hooks */
 	snapshot_take(false);
 	run_hooks("pre-update");
@@ -443,7 +450,16 @@ int cmd_update(int argc, char **argv)
 	/* 4) rebuild what linked against sonames that disappeared */
 	abi_followup();
 	triggers_run();
-	/* 5) the new packages of spins, with their dependencies, on top of the updated system */
+	/* 5) what builds against the updated system: kernel modules for the new kernel. Should one
+	 *    fail, the update stays applied and the snapshot of step 2 is the way back. */
+	if (late.n) {
+		char *list = sv_join(&late, " ");
+		msg("Building against the updated system: %s", list);
+		free(list);
+		build_install(&late, NULL);
+		triggers_run();
+	}
+	/* 6) the new packages of spins, with their dependencies, on top of the updated system */
 	if (fresh.n) {
 		svec before = SVEC_INIT;
 		db_list(&before);
@@ -455,6 +471,7 @@ int cmd_update(int argc, char **argv)
 	state_record();
 	cmd_doctor(argc, argv);
 	sv_free(&files);
+	sv_free(&late);
 	sv_free(&order);
 	sv_free(&todo);
 	sv_free(&fresh);

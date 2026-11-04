@@ -8,7 +8,7 @@
 #include <string.h>
 
 /* build NAMES (in this order) and install each package right away: what comes later may need it */
-static void build_install(const svec *names, const char *op)
+void build_install(const svec *names, const char *op)
 {
 	prefetch(names);
 	for (size_t i = 0; i < names->n; i++) {
