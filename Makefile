@@ -7,7 +7,7 @@
 #   make check-btrfs     snapshots on a real btrfs (loop device; KERNEL=bzImage: in qemu)
 #   make install         DESTDIR= PREFIX=/usr
 #   make dist            burn-VERSION.tar.gz from git HEAD
-#   make WERROR=1        warnings are errors (CI)
+#   make WERROR=1        warnings are errors (tools/check.sh)
 #   make CURL=1          downloads through libcurl inside burn (HTTP/2, multiplexed), not curl/wget
 
 PREFIX ?= /usr
