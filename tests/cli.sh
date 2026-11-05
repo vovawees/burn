@@ -161,7 +161,7 @@ if command -v zstd >/dev/null && tar --version 2>/dev/null | grep -q GNU; then
 	if b install "$pkgs/missing.pkg.tar.zst" 2>/dev/null; then fail "missing file must fail"; fi
 	# file triggers: a package's usr/share/burn/triggers/*.trigger, run after the transaction
 	mkdir -p "$tmp/dest/usr/share/burn/triggers" "$tmp/dest/usr/bin"
-	printf '# test\npath=usr/lib/modules/*/vmlinuz\npath=usr/lib/other/*\nrun=/usr/bin/trig --root $ROOT\n' \
+	printf '# test\npath=usr/lib/modules/*/vmlinuz\npath=usr/lib/other/*\nrun=/usr/bin/trig --root $ROOT $ROOT/usr/lib\n' \
 		>"$tmp/dest/usr/share/burn/triggers/kernel.trigger"
 	printf '#!/bin/sh\necho "$*" >>"$2/triggered"\n' >"$tmp/dest/usr/bin/trig" && chmod 755 "$tmp/dest/usr/bin/trig"
 	mkpkg trig 1 '' '' ''
@@ -170,7 +170,7 @@ if command -v zstd >/dev/null && tar --version 2>/dev/null | grep -q GNU; then
 	mkdir -p "$tmp/dest/usr/share/doc" && echo x >"$tmp/dest/usr/share/doc/x"
 	mkpkg other 1 '' '' ''
 	b install "$pkgs/trig-1.pkg.tar.zst" "$pkgs/kern-1.pkg.tar.zst" 2>"$tmp/err" || fail "install with a trigger"
-	[ "$(cat "$tmp/root/triggered")" = "--root $tmp/root" ] || fail "trigger: run once, \$ROOT: $(cat "$tmp/err")"
+	[ "$(cat "$tmp/root/triggered")" = "--root $tmp/root $tmp/root/usr/lib" ] || fail "trigger: run once, \$ROOT and \$ROOT/PATH: $(cat "$tmp/err")"
 	grep -q 'trigger kernel' "$tmp/err" || fail "trigger message"
 	b install "$pkgs/other-1.pkg.tar.zst" 2>/dev/null || fail "install other"
 	[ "$(wc -l <"$tmp/root/triggered")" -eq 1 ] || fail "trigger: unrelated paths do not run it"

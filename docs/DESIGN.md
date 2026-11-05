@@ -437,7 +437,8 @@ $ROOT/var/lib/burn/lock                   блокировка: один burn н
 # пути — glob (fnmatch, `*` не выходит за каталог), одна или несколько строк
 path=usr/lib/modules/*/vmlinuz
 path=usr/lib/systemd/boot/efi/*
-# программа из /usr/bin корня; $ROOT заменяется на корень («/» для живой системы)
+# программа из /usr/bin корня; $ROOT заменяется на корень («/» для живой системы),
+# $ROOT/ПУТЬ — на путь в нём (/ПУТЬ для живой системы): run=/usr/bin/glib-compile-schemas $ROOT/usr/share/glib-2.0/schemas
 run=/usr/bin/cleanlinux-boot --root $ROOT kernel sync
 ```
 

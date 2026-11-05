@@ -266,7 +266,8 @@ static void modules_trigger(void)
  * transaction ends (a trigger installed with the files it watches applies to them as well):
  *
  *   path=usr/lib/firmware/amd-ucode*   one or more globs (fnmatch: '*' stays in a directory)
- *   run=/usr/bin/prog --root $ROOT sync  a program of /usr/bin of the root; $ROOT is the root
+ *   run=/usr/bin/prog --root $ROOT sync  a program of /usr/bin of the root; $ROOT is the root,
+ *                                       $ROOT/PATH a path in it (/PATH for the running system)
  *
  * Each trigger runs once per transaction when an installed or removed path matches, in the
  * order of the file names, after ldconfig and depmod. The program is the root's own, run like
@@ -305,7 +306,13 @@ static void file_triggers(void)
 					prog = w;
 					continue;
 				}
-				sv_push(&args, !strcmp(w, "$ROOT") ? (*B.R ? B.R : "/") : w);
+				/* $ROOT: the root ("/" for the running system); $ROOT/PATH: PATH in the root */
+				if (!strcmp(w, "$ROOT"))
+					sv_push(&args, *B.R ? B.R : "/");
+				else if (str_prefix(w, "$ROOT/"))
+					sv_push_own(&args, xasprintf("%s%s", B.R, w + 5));
+				else
+					sv_push(&args, w);
 			}
 			const char *base = path_base(defs.v[d]);
 			if (!prog || !str_prefix(prog, "/usr/bin/") || strchr(prog + 9, '/')) {
